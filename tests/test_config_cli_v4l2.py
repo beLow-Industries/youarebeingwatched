@@ -1,11 +1,20 @@
 from __future__ import annotations
 
 import io
+from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch
 
 from youarebeingwatched import cli
-from youarebeingwatched.config import AppConfig, DisplayConfig, ModelConfig, with_display_overrides
+from youarebeingwatched.config import (
+    AppConfig,
+    DisplayConfig,
+    ModelConfig,
+    TrackingConfig,
+    load_config,
+    with_display_overrides,
+)
 from youarebeingwatched.v4l2 import CameraMode, select_camera_mode
 
 
@@ -20,6 +29,27 @@ class ConfigTest(unittest.TestCase):
         config = with_display_overrides(AppConfig(), fullscreen=None, scan_max=None, source_mode_strategy="max_resolution")
 
         self.assertEqual(config.sources.mode_strategy, "max_resolution")
+
+    def test_tracking_defaults_smooth_short_detection_drops(self) -> None:
+        self.assertEqual(TrackingConfig().missing_linger_seconds, 0.5)
+        self.assertEqual(TrackingConfig().reselect_interval_seconds, 1.0)
+
+    def test_loads_tracking_config(self) -> None:
+        with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False) as config_file:
+            config_file.write(
+                "[tracking]\n"
+                "missing_linger_seconds = 0.75\n"
+                "reselect_interval_seconds = 1.5\n"
+            )
+            config_path = Path(config_file.name)
+
+        try:
+            config = load_config(config_path)
+        finally:
+            config_path.unlink()
+
+        self.assertEqual(config.tracking.missing_linger_seconds, 0.75)
+        self.assertEqual(config.tracking.reselect_interval_seconds, 1.5)
 
 
 class CliTest(unittest.TestCase):

@@ -11,7 +11,7 @@ CameraModeStrategy = Literal["configured", "max_fps", "max_resolution"]
 @dataclass(frozen=True)
 class ModelConfig:
     weights: str = "yolo26n.pt"
-    confidence: float = 0.25
+    confidence: float = 0.40
     selection_class: str = "person"
     overlay_classes: tuple[str, ...] = ("person", "dog")
 
@@ -19,6 +19,12 @@ class ModelConfig:
 @dataclass(frozen=True)
 class SelectionConfig:
     interval_seconds: float = 10.0
+
+
+@dataclass(frozen=True)
+class TrackingConfig:
+    missing_linger_seconds: float = 0.5
+    reselect_interval_seconds: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -46,6 +52,7 @@ class SourcesConfig:
 class AppConfig:
     model: ModelConfig = ModelConfig()
     selection: SelectionConfig = SelectionConfig()
+    tracking: TrackingConfig = TrackingConfig()
     display: DisplayConfig = DisplayConfig()
     sources: SourcesConfig = SourcesConfig()
 
@@ -60,6 +67,7 @@ def load_config(path: Path | None) -> AppConfig:
     return AppConfig(
         model=_load_model(raw.get("model", {})),
         selection=_load_selection(raw.get("selection", {})),
+        tracking=_load_tracking(raw.get("tracking", {})),
         display=_load_display(raw.get("display", {})),
         sources=_load_sources(raw.get("sources", {})),
     )
@@ -78,6 +86,14 @@ def _load_model(raw: dict[str, Any]) -> ModelConfig:
 def _load_selection(raw: dict[str, Any]) -> SelectionConfig:
     defaults = SelectionConfig()
     return SelectionConfig(interval_seconds=float(raw.get("interval_seconds", defaults.interval_seconds)))
+
+
+def _load_tracking(raw: dict[str, Any]) -> TrackingConfig:
+    defaults = TrackingConfig()
+    return TrackingConfig(
+        missing_linger_seconds=float(raw.get("missing_linger_seconds", defaults.missing_linger_seconds)),
+        reselect_interval_seconds=float(raw.get("reselect_interval_seconds", defaults.reselect_interval_seconds)),
+    )
 
 
 def _load_display(raw: dict[str, Any]) -> DisplayConfig:
@@ -124,6 +140,7 @@ def with_source_overrides(config: AppConfig, sources: list[str] | None) -> AppCo
     return AppConfig(
         model=config.model,
         selection=config.selection,
+        tracking=config.tracking,
         display=config.display,
         sources=SourcesConfig(
             auto_discover=False,
@@ -181,7 +198,7 @@ def with_display_overrides(
             mode_strategy=source_mode_strategy,
         )
 
-    return AppConfig(model=config.model, selection=config.selection, display=display, sources=sources)
+    return AppConfig(model=config.model, selection=config.selection, tracking=config.tracking, display=display, sources=sources)
 
 
 def _mode_strategy(value: Any) -> CameraModeStrategy:

@@ -7,6 +7,10 @@ overlay_classes = ["person", "dog"]
 [selection]
 interval_seconds = 10.0
 
+[tracking]
+missing_linger_seconds = 0.5
+reselect_interval_seconds = 1.0
+
 [display]
 window_name = "you are being watched"
 fullscreen = true

@@ -103,5 +103,5 @@ Live cameras are captured on a background worker. The app keeps only the newest 
 - The image processor chooses detected people or dogs just after each 10-second source decision, then re-elects every second.
 - With one subject, output is cropped to that detection rectangle, fit to display height, centered on a black display canvas, and shown without overlays.
 - With two subjects, the display is split into vertical thirds and the subjects are shown in the center and right thirds; with three or more subjects, three randomly chosen subjects fill all thirds.
-- If a tracked subject disappears, the processor immediately recomputes the arrangement from the visible people and dogs while keeping surviving subjects in their current thirds where possible; if none are visible, the original frame is shown.
+- If a tracked subject disappears, the processor keeps cropping the current frame at its last known rectangle for 0.5 seconds to smooth brief detector dropouts. After that grace window, it recomputes the arrangement from the visible people and dogs while keeping surviving subjects in their current thirds where possible; if none are visible, the original frame is shown.
 - `--headless` is only for development smoke checks; installation output is the OpenCV window.

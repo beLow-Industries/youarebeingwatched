@@ -41,7 +41,12 @@ def run_app(config: AppConfig, *, mock: bool, headless: bool = False, max_frames
         logger.error("display unavailable: {}", exc)
         return 2
 
-    postprocessor = PostProcessor(config.display, selection_classes=config.model.overlay_classes)
+    postprocessor = PostProcessor(
+        config.display,
+        selection_classes=config.model.overlay_classes,
+        selection_interval_seconds=config.tracking.reselect_interval_seconds,
+        missing_linger_seconds=config.tracking.missing_linger_seconds,
+    )
 
     selected_source: Source | None = source_manager.sources[0] if mock and source_manager.sources else None
     displayed_source_name: str | None = None
