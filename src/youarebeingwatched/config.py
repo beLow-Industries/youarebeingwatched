@@ -11,7 +11,7 @@ CameraModeStrategy = Literal["configured", "max_fps", "max_resolution"]
 @dataclass(frozen=True)
 class ModelConfig:
     weights: str = "yolo26n.pt"
-    confidence: float = 0.40
+    confidence: float = 0.25
     selection_class: str = "person"
     overlay_classes: tuple[str, ...] = ("person", "dog")
 
@@ -24,7 +24,7 @@ class SelectionConfig:
 @dataclass(frozen=True)
 class DisplayConfig:
     window_name: str = "you are being watched"
-    fullscreen: bool = False
+    fullscreen: bool = True
     max_fps: float = 30.0
     width: int = 1280
     height: int = 720

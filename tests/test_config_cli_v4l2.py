@@ -5,13 +5,16 @@ import unittest
 from unittest.mock import patch
 
 from youarebeingwatched import cli
-from youarebeingwatched.config import AppConfig, ModelConfig, with_display_overrides
+from youarebeingwatched.config import AppConfig, DisplayConfig, ModelConfig, with_display_overrides
 from youarebeingwatched.v4l2 import CameraMode, select_camera_mode
 
 
 class ConfigTest(unittest.TestCase):
     def test_default_confidence_is_forty_percent(self) -> None:
         self.assertEqual(ModelConfig().confidence, 0.40)
+
+    def test_display_defaults_to_fullscreen(self) -> None:
+        self.assertTrue(DisplayConfig().fullscreen)
 
     def test_source_mode_strategy_overrides(self) -> None:
         config = with_display_overrides(AppConfig(), fullscreen=None, scan_max=None, source_mode_strategy="max_resolution")

@@ -64,7 +64,7 @@ class Display:
                 imshow_elapsed,
                 wait_elapsed,
             )
-        return key not in (ord("q"), 27)
+        return _should_continue(key)
 
     def close(self) -> None:
         logger.info("closing display window={}", self.config.window_name)
@@ -113,6 +113,10 @@ def waiting_frame(width: int, height: int, message: str = "waiting for source") 
         cv2.LINE_AA,
     )
     return frame
+
+
+def _should_continue(key: int) -> bool:
+    return key not in (ord("q"), ord("Q"), 27)
 
 
 def _assert_x_display_available() -> None:

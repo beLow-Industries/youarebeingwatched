@@ -19,37 +19,38 @@ class PostProcessResult:
 
 
 @dataclass(frozen=True)
-class TrackedPerson:
+class TrackedObject:
     slot: int | None
+    class_name: str
     box: Box
 
 
 class PostProcessor:
-    """Crops output to tracked people during selected-source display."""
+    """Crops output to tracked objects during selected-source display."""
 
     def __init__(
         self,
         display: DisplayConfig,
         *,
-        selection_class: str = "person",
-        person_interval_seconds: float = 1.0,
+        selection_classes: tuple[str, ...] = ("person", "dog"),
+        selection_interval_seconds: float = 5.0,
         rng: random.Random | None = None,
     ) -> None:
         self._display_width = display.width
         self._display_height = display.height
-        self._selection_class = selection_class
-        self._person_interval_seconds = person_interval_seconds
+        self._selection_classes = set(selection_classes)
+        self._selection_interval_seconds = selection_interval_seconds
         self._rng = rng or random.Random()
-        self._tracked_people: list[TrackedPerson] = []
-        self._next_person_selection_at = 0.0
-        self._force_person_selection = True
+        self._tracked_objects: list[TrackedObject] = []
+        self._next_selection_at = 0.0
+        self._force_selection = True
         self._tracked_source_name: str | None = None
 
     def note_source_decision(self, now: float | None = None) -> None:
-        self._tracked_people = []
+        self._tracked_objects = []
         self._tracked_source_name = None
-        self._force_person_selection = True
-        self._next_person_selection_at = now if now is not None else time.monotonic()
+        self._force_selection = True
+        self._next_selection_at = now if now is not None else time.monotonic()
 
     def process(
         self,
@@ -61,91 +62,93 @@ class PostProcessor:
         now: float | None = None,
     ) -> PostProcessResult:
         if not should_crop:
-            self._tracked_people = []
+            self._tracked_objects = []
             self._tracked_source_name = None
-            self._force_person_selection = True
+            self._force_selection = True
             return PostProcessResult(frame=frame, detections=detections)
 
         now = now if now is not None else time.monotonic()
-        people = [detection for detection in detections if detection.class_name == self._selection_class]
-        if not people:
-            self._tracked_people = []
-            self._force_person_selection = True
+        candidates = [detection for detection in detections if detection.class_name in self._selection_classes]
+        if not candidates:
+            self._tracked_objects = []
+            self._force_selection = True
             return PostProcessResult(frame=frame, detections=detections)
 
         if self._tracked_source_name != source_name:
-            self._tracked_people = []
+            self._tracked_objects = []
             self._tracked_source_name = source_name
-            self._force_person_selection = True
+            self._force_selection = True
 
-        selected = self._select_people(people, now)
+        selected = self._select_objects(candidates, now)
         if not selected:
             return PostProcessResult(frame=frame, detections=detections)
 
         cropped = _compose_crops(frame, selected, self._display_width, self._display_height)
         return PostProcessResult(frame=cropped, detections=[], show_source_label=False)
 
-    def _select_people(self, people: list[Detection], now: float) -> list[TrackedPerson]:
-        if self._force_person_selection or not self._tracked_people or now >= self._next_person_selection_at:
-            return self._elect_people(people, now)
+    def _select_objects(self, candidates: list[Detection], now: float) -> list[TrackedObject]:
+        if self._force_selection or not self._tracked_objects or now >= self._next_selection_at:
+            return self._elect_objects(candidates, now)
 
-        matched, remaining = _match_tracked_people(self._tracked_people, people)
-        if len(matched) == len(self._tracked_people):
-            self._tracked_people = matched
+        matched, remaining = _match_tracked_objects(self._tracked_objects, candidates)
+        if len(matched) == len(self._tracked_objects):
+            self._tracked_objects = matched
             return matched
         if matched:
-            return self._stabilized_recompute(matched, remaining, people, now)
-        return self._elect_people(people, now)
+            return self._stabilized_recompute(matched, remaining, candidates, now)
+        return self._elect_objects(candidates, now)
 
-    def _elect_people(self, people: list[Detection], now: float) -> list[TrackedPerson]:
-        selected_count = min(3, len(people))
-        if selected_count == len(people):
-            selected = list(people)
+    def _elect_objects(self, candidates: list[Detection], now: float) -> list[TrackedObject]:
+        selected_count = min(3, len(candidates))
+        if selected_count == len(candidates):
+            selected = list(candidates)
         else:
-            selected = self._rng.sample(people, selected_count)
+            selected = self._rng.sample(candidates, selected_count)
 
         selected.sort(key=lambda detection: _box_center_x(detection.box))
         slots = _slots_for_count(selected_count)
-        self._tracked_people = [TrackedPerson(slot=slot, box=detection.box) for slot, detection in zip(slots, selected, strict=True)]
-        self._force_person_selection = False
-        self._next_person_selection_at = now + self._person_interval_seconds
-        return self._tracked_people
+        self._tracked_objects = [
+            TrackedObject(slot=slot, class_name=detection.class_name, box=detection.box) for slot, detection in zip(slots, selected, strict=True)
+        ]
+        self._force_selection = False
+        self._next_selection_at = now + self._selection_interval_seconds
+        return self._tracked_objects
 
     def _stabilized_recompute(
         self,
-        matched: list[TrackedPerson],
+        matched: list[TrackedObject],
         remaining: list[Detection],
-        people: list[Detection],
+        candidates: list[Detection],
         now: float,
-    ) -> list[TrackedPerson]:
-        target_count = min(3, len(people))
+    ) -> list[TrackedObject]:
+        target_count = min(3, len(candidates))
         if len(matched) >= target_count:
             selected = matched[:target_count]
         else:
             needed = target_count - len(matched)
-            selected = [*matched, *_new_tracked_people(remaining, needed, _unused_slots(matched, target_count), self._rng)]
+            selected = [*matched, *_new_tracked_objects(remaining, needed, _unused_slots(matched, target_count), self._rng)]
 
-        self._tracked_people = selected
-        self._force_person_selection = False
-        self._next_person_selection_at = now + self._person_interval_seconds
-        return self._tracked_people
+        self._tracked_objects = selected
+        self._force_selection = False
+        self._next_selection_at = now + self._selection_interval_seconds
+        return self._tracked_objects
 
 
 def _crop_to_display(frame: Frame, box: Box, display_width: int, display_height: int) -> Frame:
     return _crop_to_canvas(frame, box, display_width, display_height)
 
 
-def _compose_crops(frame: Frame, people: list[TrackedPerson], display_width: int, display_height: int) -> Frame:
-    if len(people) == 1 and people[0].slot is None:
-        return _crop_to_display(frame, people[0].box, display_width, display_height)
+def _compose_crops(frame: Frame, objects: list[TrackedObject], display_width: int, display_height: int) -> Frame:
+    if len(objects) == 1 and objects[0].slot is None:
+        return _crop_to_display(frame, objects[0].box, display_width, display_height)
 
     canvas = _black_canvas(frame, display_width, display_height)
     edges = _third_edges(display_width)
-    for person in people:
-        slot = person.slot if person.slot is not None else 0
+    for item in objects:
+        slot = item.slot if item.slot is not None else 0
         slot_x1 = edges[slot]
         slot_x2 = edges[slot + 1]
-        if not _paste_crop(frame, person.box, canvas, slot_x1, slot_x2, display_height):
+        if not _paste_crop(frame, item.box, canvas, slot_x1, slot_x2, display_height):
             return frame
     return canvas
 
@@ -200,15 +203,15 @@ def _clip_box(box: Box, frame_width: int, frame_height: int) -> Box | None:
     return Box(x1=x1, y1=y1, x2=x2, y2=y2)
 
 
-def _match_tracked_people(tracked_people: list[TrackedPerson], people: list[Detection]) -> tuple[list[TrackedPerson], list[Detection]]:
-    remaining = list(people)
-    matched: list[TrackedPerson] = []
-    for tracked in tracked_people:
+def _match_tracked_objects(tracked_objects: list[TrackedObject], candidates: list[Detection]) -> tuple[list[TrackedObject], list[Detection]]:
+    remaining = list(candidates)
+    matched: list[TrackedObject] = []
+    for tracked in tracked_objects:
         detection = _match_detection(tracked.box, remaining)
         if detection is None:
             continue
         remaining.remove(detection)
-        matched.append(TrackedPerson(slot=tracked.slot, box=detection.box))
+        matched.append(TrackedObject(slot=tracked.slot, class_name=detection.class_name, box=detection.box))
     return matched, remaining
 
 
@@ -275,12 +278,12 @@ def _third_edges(display_width: int) -> list[int]:
     return [0, display_width // 3, (display_width * 2) // 3, display_width]
 
 
-def _new_tracked_people(
+def _new_tracked_objects(
     remaining: list[Detection],
     count: int,
     slots: list[int | None],
     rng: random.Random,
-) -> list[TrackedPerson]:
+) -> list[TrackedObject]:
     if count <= 0 or not remaining:
         return []
 
@@ -291,11 +294,11 @@ def _new_tracked_people(
         selected = rng.sample(remaining, selected_count)
 
     selected.sort(key=lambda detection: _box_center_x(detection.box))
-    return [TrackedPerson(slot=slot, box=detection.box) for slot, detection in zip(slots, selected)]
+    return [TrackedObject(slot=slot, class_name=detection.class_name, box=detection.box) for slot, detection in zip(slots, selected)]
 
 
-def _unused_slots(matched: list[TrackedPerson], target_count: int) -> list[int | None]:
-    used = {person.slot for person in matched}
+def _unused_slots(matched: list[TrackedObject], target_count: int) -> list[int | None]:
+    used = {item.slot for item in matched}
     preferred = [slot for slot in _slots_for_count(target_count) if slot not in used]
     fallback = [slot for slot in [0, 1, 2] if slot not in used]
     return [*preferred, *[slot for slot in fallback if slot not in preferred]]

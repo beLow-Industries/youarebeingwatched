@@ -14,6 +14,10 @@ def detection(x1: int, y1: int, x2: int, y2: int, confidence: float = 0.9) -> De
     return Detection(class_name="person", confidence=confidence, box=Box(x1=x1, y1=y1, x2=x2, y2=y2))
 
 
+def dog_detection(x1: int, y1: int, x2: int, y2: int, confidence: float = 0.9) -> Detection:
+    return Detection(class_name="dog", confidence=confidence, box=Box(x1=x1, y1=y1, x2=x2, y2=y2))
+
+
 def solid_frame(width: int, height: int, color: tuple[int, int, int]) -> np.ndarray:
     frame = np.zeros((height, width, 3), dtype=np.uint8)
     frame[:, :] = color
@@ -259,6 +263,36 @@ class PostProcessorTest(unittest.TestCase):
 
         self.assertIs(result.frame, frame)
         self.assertTrue(result.show_source_label)
+
+    def test_dog_detection_is_selected_and_displayed(self) -> None:
+        frame = solid_frame(100, 80, (10, 20, 30))
+        frame[10:70, 20:50] = (200, 120, 20)
+        processor = PostProcessor(DisplayConfig(width=80, height=120), rng=random.Random(0))
+
+        result = processor.process(frame, [dog_detection(20, 10, 50, 70)], source_name="camera:0", should_crop=True, now=0.0)
+
+        self.assertEqual(result.frame.shape, (120, 80, 3))
+        self.assertFalse(result.show_source_label)
+        self.assertEqual(result.detections, [])
+        self.assertTrue(np.all(result.frame[:, 10:70] == (200, 120, 20)))
+
+    def test_person_and_dog_share_thirds(self) -> None:
+        frame = np.zeros((100, 90, 3), dtype=np.uint8)
+        frame[:, :30] = (40, 0, 0)
+        frame[:, 60:] = (200, 120, 20)
+        processor = PostProcessor(DisplayConfig(width=90, height=100), rng=random.Random(0))
+
+        result = processor.process(
+            frame,
+            [detection(0, 0, 30, 100), dog_detection(60, 0, 90, 100)],
+            source_name="camera:0",
+            should_crop=True,
+            now=0.0,
+        )
+
+        self.assertTrue(np.all(result.frame[:, :30] == 0))
+        self.assertTrue(np.all(result.frame[:, 30:60] == (40, 0, 0)))
+        self.assertTrue(np.all(result.frame[:, 60:90] == (200, 120, 20)))
 
 
 if __name__ == "__main__":
