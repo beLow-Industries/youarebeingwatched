@@ -1,0 +1,265 @@
+from __future__ import annotations
+
+import random
+import unittest
+
+import numpy as np
+
+from youarebeingwatched.config import DisplayConfig
+from youarebeingwatched.postprocess import PostProcessor
+from youarebeingwatched.types import Box, Detection
+
+
+def detection(x1: int, y1: int, x2: int, y2: int, confidence: float = 0.9) -> Detection:
+    return Detection(class_name="person", confidence=confidence, box=Box(x1=x1, y1=y1, x2=x2, y2=y2))
+
+
+def solid_frame(width: int, height: int, color: tuple[int, int, int]) -> np.ndarray:
+    frame = np.zeros((height, width, 3), dtype=np.uint8)
+    frame[:, :] = color
+    return frame
+
+
+class SampleSequence:
+    def __init__(self, indexes: list[list[int]]) -> None:
+        self._indexes = indexes
+        self._cursor = 0
+
+    def sample(self, population: list[Detection], count: int) -> list[Detection]:
+        indexes = self._indexes[self._cursor]
+        self._cursor += 1
+        return [population[index] for index in indexes[:count]]
+
+
+class PostProcessorTest(unittest.TestCase):
+    def test_crops_height_fit_and_centers_with_black_sides(self) -> None:
+        frame = solid_frame(100, 80, (10, 20, 30))
+        frame[10:70, 20:50] = (200, 40, 80)
+        processor = PostProcessor(DisplayConfig(width=80, height=120), rng=random.Random(0))
+
+        result = processor.process(frame, [detection(20, 10, 50, 70)], source_name="camera:0", should_crop=True, now=0.0)
+
+        self.assertEqual(result.frame.shape, (120, 80, 3))
+        self.assertFalse(result.show_source_label)
+        self.assertEqual(result.detections, [])
+        self.assertTrue(np.all(result.frame[:, :10] == 0))
+        self.assertTrue(np.all(result.frame[:, 70:] == 0))
+        self.assertTrue(np.all(result.frame[:, 10:70] == (200, 40, 80)))
+
+    def test_crops_horizontally_when_height_fit_is_wider_than_display(self) -> None:
+        frame = np.zeros((20, 100, 3), dtype=np.uint8)
+        frame[:, :50] = (20, 20, 20)
+        frame[:, 50:] = (220, 220, 220)
+        processor = PostProcessor(DisplayConfig(width=40, height=40), rng=random.Random(0))
+
+        result = processor.process(frame, [detection(0, 0, 100, 20)], source_name="camera:0", should_crop=True, now=0.0)
+
+        self.assertEqual(result.frame.shape, (40, 40, 3))
+        self.assertLess(np.mean(result.frame[:, :19]), 30)
+        self.assertGreater(np.mean(result.frame[:, 21:]), 210)
+
+    def test_clips_detection_box_to_source_frame(self) -> None:
+        frame = solid_frame(40, 30, (0, 0, 0))
+        frame[0:20, 0:20] = (90, 100, 110)
+        processor = PostProcessor(DisplayConfig(width=40, height=40), rng=random.Random(0))
+
+        result = processor.process(frame, [detection(-10, -10, 20, 20)], source_name="camera:0", should_crop=True, now=0.0)
+
+        self.assertEqual(result.frame.shape, (40, 40, 3))
+        self.assertTrue(np.all(result.frame == (90, 100, 110)))
+
+    def test_keeps_tracking_same_person_before_interval(self) -> None:
+        frame = np.zeros((100, 90, 3), dtype=np.uint8)
+        frame[:, :30] = (40, 0, 0)
+        frame[:, 60:] = (0, 80, 0)
+        processor = PostProcessor(DisplayConfig(width=90, height=100), rng=random.Random(1))
+
+        first = processor.process(
+            frame,
+            [detection(0, 0, 30, 100), detection(60, 0, 90, 100)],
+            source_name="camera:0",
+            should_crop=True,
+            now=0.0,
+        )
+        second = processor.process(
+            frame,
+            [detection(3, 0, 33, 100), detection(60, 0, 90, 100)],
+            source_name="camera:0",
+            should_crop=True,
+            now=2.0,
+        )
+
+        self.assertTrue(np.all(first.frame[:, :30] == 0))
+        self.assertTrue(np.all(first.frame[:, 30:60] == (40, 0, 0)))
+        self.assertTrue(np.all(first.frame[:, 60:90] == (0, 80, 0)))
+        self.assertLess(np.mean(second.frame[:, :30]), 10)
+        self.assertGreater(np.mean(second.frame[:, 30:60, 0]), 35)
+        self.assertGreater(np.mean(second.frame[:, 60:90, 1]), 75)
+
+    def test_reselects_after_interval_and_after_source_decision(self) -> None:
+        frame = np.zeros((100, 120, 3), dtype=np.uint8)
+        frame[:, :30] = (40, 0, 0)
+        frame[:, 30:60] = (0, 80, 0)
+        frame[:, 60:90] = (0, 0, 120)
+        frame[:, 90:120] = (160, 160, 0)
+        processor = PostProcessor(DisplayConfig(width=90, height=100), rng=SampleSequence([[0, 1, 2], [1, 2, 3], [0, 2, 3]]))  # type: ignore[arg-type]
+        people = [
+            detection(0, 0, 30, 100),
+            detection(30, 0, 60, 100),
+            detection(60, 0, 90, 100),
+            detection(90, 0, 120, 100),
+        ]
+
+        first = processor.process(frame, people, source_name="camera:0", should_crop=True, now=0.0)
+        after_interval = processor.process(frame, people, source_name="camera:0", should_crop=True, now=1.0)
+        processor.note_source_decision(now=6.0)
+        after_source_decision = processor.process(frame, people, source_name="camera:0", should_crop=True, now=6.0)
+
+        self.assertFalse(np.array_equal(first.frame, after_interval.frame))
+        self.assertFalse(np.array_equal(after_interval.frame, after_source_decision.frame))
+        self.assertEqual(first.frame.shape, (100, 90, 3))
+        self.assertEqual(after_interval.frame.shape, (100, 90, 3))
+        self.assertEqual(after_source_decision.frame.shape, (100, 90, 3))
+
+    def test_reselects_immediately_when_tracked_person_disappears(self) -> None:
+        frame = np.zeros((100, 90, 3), dtype=np.uint8)
+        frame[:, :30] = (40, 0, 0)
+        frame[:, 60:] = (0, 80, 0)
+        processor = PostProcessor(DisplayConfig(width=90, height=100), rng=random.Random(1))
+
+        processor.process(
+            frame,
+            [detection(0, 0, 30, 100), detection(60, 0, 90, 100)],
+            source_name="camera:0",
+            should_crop=True,
+            now=0.0,
+        )
+        result = processor.process(frame, [detection(60, 0, 90, 100)], source_name="camera:0", should_crop=True, now=0.5)
+
+        self.assertTrue(np.all(result.frame[:, :30] == 0))
+        self.assertTrue(np.all(result.frame[:, 30:60] == 0))
+        self.assertTrue(np.all(result.frame[:, 60:] == (0, 80, 0)))
+
+    def test_recompute_keeps_survivors_in_previous_thirds(self) -> None:
+        frame = np.zeros((100, 90, 3), dtype=np.uint8)
+        frame[:, :30] = (40, 0, 0)
+        frame[:, 30:60] = (0, 80, 0)
+        frame[:, 60:] = (0, 0, 120)
+        processor = PostProcessor(DisplayConfig(width=90, height=100), rng=random.Random(0))
+
+        processor.process(
+            frame,
+            [detection(0, 0, 30, 100), detection(30, 0, 60, 100), detection(60, 0, 90, 100)],
+            source_name="camera:0",
+            should_crop=True,
+            now=0.0,
+        )
+        result = processor.process(
+            frame,
+            [detection(0, 0, 30, 100), detection(60, 0, 90, 100)],
+            source_name="camera:0",
+            should_crop=True,
+            now=0.5,
+        )
+
+        self.assertTrue(np.all(result.frame[:, :30] == (40, 0, 0)))
+        self.assertTrue(np.all(result.frame[:, 30:60] == 0))
+        self.assertTrue(np.all(result.frame[:, 60:] == (0, 0, 120)))
+
+    def test_partial_recompute_does_not_require_all_open_slots_to_be_filled(self) -> None:
+        frame = np.zeros((100, 120, 3), dtype=np.uint8)
+        frame[:, :30] = (40, 0, 0)
+        frame[:, 90:] = (160, 160, 0)
+        processor = PostProcessor(DisplayConfig(width=90, height=100), rng=random.Random(0))
+
+        processor.process(
+            frame,
+            [detection(0, 0, 30, 100), detection(30, 0, 60, 100), detection(60, 0, 90, 100)],
+            source_name="camera:0",
+            should_crop=True,
+            now=0.0,
+        )
+        result = processor.process(
+            frame,
+            [detection(0, 0, 30, 100), detection(90, 0, 120, 100)],
+            source_name="camera:0",
+            should_crop=True,
+            now=0.5,
+        )
+
+        self.assertEqual(result.frame.shape, (100, 90, 3))
+        self.assertTrue(np.all(result.frame[:, :30] == (40, 0, 0)))
+        self.assertTrue(np.any(result.frame[:, 30:] == (160, 160, 0)))
+
+    def test_single_survivor_stays_in_third_until_next_election(self) -> None:
+        frame = np.zeros((100, 90, 3), dtype=np.uint8)
+        frame[:, :30] = (40, 0, 0)
+        frame[:, 60:] = (0, 80, 0)
+        processor = PostProcessor(DisplayConfig(width=90, height=100), rng=random.Random(1))
+
+        processor.process(
+            frame,
+            [detection(0, 0, 30, 100), detection(60, 0, 90, 100)],
+            source_name="camera:0",
+            should_crop=True,
+            now=0.0,
+        )
+        immediate = processor.process(frame, [detection(60, 0, 90, 100)], source_name="camera:0", should_crop=True, now=0.5)
+        after_interval = processor.process(frame, [detection(60, 0, 90, 100)], source_name="camera:0", should_crop=True, now=2.0)
+
+        self.assertTrue(np.all(immediate.frame[:, :30] == 0))
+        self.assertTrue(np.all(immediate.frame[:, 30:60] == 0))
+        self.assertTrue(np.all(immediate.frame[:, 60:] == (0, 80, 0)))
+        self.assertTrue(np.all(after_interval.frame[:, :30] == 0))
+        self.assertTrue(np.all(after_interval.frame[:, 30:60] == (0, 80, 0)))
+        self.assertTrue(np.all(after_interval.frame[:, 60:] == 0))
+
+    def test_two_people_use_center_and_right_thirds(self) -> None:
+        frame = np.zeros((100, 90, 3), dtype=np.uint8)
+        frame[:, :30] = (40, 0, 0)
+        frame[:, 60:] = (0, 80, 0)
+        processor = PostProcessor(DisplayConfig(width=90, height=100), rng=random.Random(0))
+
+        result = processor.process(
+            frame,
+            [detection(0, 0, 30, 100), detection(60, 0, 90, 100)],
+            source_name="camera:0",
+            should_crop=True,
+            now=0.0,
+        )
+
+        self.assertTrue(np.all(result.frame[:, :30] == 0))
+        self.assertTrue(np.all(result.frame[:, 30:60] == (40, 0, 0)))
+        self.assertTrue(np.all(result.frame[:, 60:90] == (0, 80, 0)))
+
+    def test_three_people_fill_all_thirds_in_source_order(self) -> None:
+        frame = np.zeros((100, 90, 3), dtype=np.uint8)
+        frame[:, :30] = (40, 0, 0)
+        frame[:, 30:60] = (0, 80, 0)
+        frame[:, 60:] = (0, 0, 120)
+        processor = PostProcessor(DisplayConfig(width=90, height=100), rng=random.Random(0))
+
+        result = processor.process(
+            frame,
+            [detection(60, 0, 90, 100), detection(0, 0, 30, 100), detection(30, 0, 60, 100)],
+            source_name="camera:0",
+            should_crop=True,
+            now=0.0,
+        )
+
+        self.assertTrue(np.all(result.frame[:, :30] == (40, 0, 0)))
+        self.assertTrue(np.all(result.frame[:, 30:60] == (0, 80, 0)))
+        self.assertTrue(np.all(result.frame[:, 60:90] == (0, 0, 120)))
+
+    def test_passes_through_original_frame_when_no_person_is_available(self) -> None:
+        frame = solid_frame(64, 48, (12, 34, 56))
+        processor = PostProcessor(DisplayConfig(width=80, height=120), rng=random.Random(0))
+
+        result = processor.process(frame, [], source_name="camera:0", should_crop=True, now=0.0)
+
+        self.assertIs(result.frame, frame)
+        self.assertTrue(result.show_source_label)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,0 +1,17 @@
+.venv/
+.uv-cache/
+__pycache__/
+*.py[cod]
+
+# Ultralytics / model output
+.ultralytics/
+yolo*.pt
+runs/
+
+# Local installation media and scratch outputs
+media/
+captures/
+*.mp4
+*.mov
+*.avi
+*.mkv
