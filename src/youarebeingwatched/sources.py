@@ -58,7 +58,7 @@ class VideoSource:
         self._capture_configs = _capture_config_candidates(self._target, config) if self._is_live_camera else [config]
         self._capture_config_index = 0
         self._config = self._capture_configs[self._capture_config_index]
-        self._capture_factory = capture_factory or _open_direct_capture
+        self._capture_factory = capture_factory or _open_capture
         self._latest_lock = threading.Lock()
         self._latest_frame: Frame | None = None
         self._latest_frame_at = 0.0

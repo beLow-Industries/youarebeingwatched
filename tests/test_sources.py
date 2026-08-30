@@ -9,7 +9,7 @@ from unittest.mock import patch
 import numpy as np
 
 from youarebeingwatched.config import SourcesConfig
-from youarebeingwatched.sources import SourceManager, SourceSpec, VideoSource, _capture_config_candidates
+from youarebeingwatched.sources import SourceManager, SourceSpec, VideoSource, _capture_config_candidates, _open_capture
 from youarebeingwatched.v4l2 import CameraMode
 
 
@@ -54,6 +54,19 @@ def wait_for(predicate: object, timeout: float = 1.0) -> bool:
 
 
 class VideoSourceCaptureWorkerTest(unittest.TestCase):
+    def test_video_source_uses_file_aware_default_capture_opener(self) -> None:
+        with patch("youarebeingwatched.sources._open_capture", return_value=FakeCapture()) as open_capture:
+            source = VideoSource(SourceSpec("clip.mp4"), SourcesConfig())
+            self.addCleanup(source.release)
+
+        open_capture.assert_called_once_with("clip.mp4", SourcesConfig())
+
+    def test_open_capture_does_not_force_v4l2_for_video_files(self) -> None:
+        with patch("youarebeingwatched.sources.cv2.VideoCapture", return_value=FakeCapture()) as video_capture:
+            _open_capture("clip.mp4", SourcesConfig())
+
+        video_capture.assert_called_once_with("clip.mp4")
+
     def test_live_camera_read_returns_latest_frame_without_blocking(self) -> None:
         first = np.full((2, 2, 3), 10, dtype=np.uint8)
         second = np.full((2, 2, 3), 20, dtype=np.uint8)
