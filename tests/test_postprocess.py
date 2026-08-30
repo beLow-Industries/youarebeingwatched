@@ -7,7 +7,7 @@ import numpy as np
 
 from youarebeingwatched.config import DisplayConfig
 from youarebeingwatched.postprocess import PostProcessor
-from youarebeingwatched.types import Box, Detection
+from youarebeingwatched.types import BinaryCropMask, Box, Detection
 
 
 def detection(x1: int, y1: int, x2: int, y2: int, confidence: float = 0.9) -> Detection:
@@ -16,6 +16,10 @@ def detection(x1: int, y1: int, x2: int, y2: int, confidence: float = 0.9) -> De
 
 def dog_detection(x1: int, y1: int, x2: int, y2: int, confidence: float = 0.9) -> Detection:
     return Detection(class_name="dog", confidence=confidence, box=Box(x1=x1, y1=y1, x2=x2, y2=y2))
+
+
+def masked_detection(x1: int, y1: int, x2: int, y2: int, mask: np.ndarray, confidence: float = 0.9) -> Detection:
+    return Detection(class_name="person", confidence=confidence, box=Box(x1=x1, y1=y1, x2=x2, y2=y2), mask=BinaryCropMask(mask))
 
 
 def solid_frame(width: int, height: int, color: tuple[int, int, int]) -> np.ndarray:
@@ -49,6 +53,30 @@ class PostProcessorTest(unittest.TestCase):
         self.assertTrue(np.all(result.frame[:, :10] == 0))
         self.assertTrue(np.all(result.frame[:, 70:] == 0))
         self.assertTrue(np.all(result.frame[:, 10:70] == (200, 40, 80)))
+
+    def test_segmentation_mask_blacks_out_pixels_outside_mask(self) -> None:
+        frame = solid_frame(4, 4, (200, 40, 80))
+        mask = np.zeros((4, 4), dtype=bool)
+        mask[:, :2] = True
+        processor = PostProcessor(DisplayConfig(width=4, height=4), rng=random.Random(0))
+
+        result = processor.process(frame, [masked_detection(0, 0, 4, 4, mask)], source_name="camera:0", should_crop=True, now=0.0)
+
+        self.assertTrue(np.all(result.frame[:, :2] == (200, 40, 80)))
+        self.assertTrue(np.all(result.frame[:, 2:] == 0))
+
+    def test_segmentation_mask_is_retained_during_linger_window(self) -> None:
+        frame = solid_frame(4, 4, (200, 40, 80))
+        mask = np.zeros((4, 4), dtype=bool)
+        mask[:, 1:3] = True
+        processor = PostProcessor(DisplayConfig(width=4, height=4), rng=random.Random(0))
+
+        processor.process(frame, [masked_detection(0, 0, 4, 4, mask)], source_name="camera:0", should_crop=True, now=0.0)
+        result = processor.process(frame, [], source_name="camera:0", should_crop=True, now=0.25)
+
+        self.assertTrue(np.all(result.frame[:, :1] == 0))
+        self.assertTrue(np.all(result.frame[:, 1:3] == (200, 40, 80)))
+        self.assertTrue(np.all(result.frame[:, 3:] == 0))
 
     def test_crops_horizontally_when_height_fit_is_wider_than_display(self) -> None:
         frame = np.zeros((20, 100, 3), dtype=np.uint8)

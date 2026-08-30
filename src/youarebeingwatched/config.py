@@ -11,6 +11,7 @@ CameraModeStrategy = Literal["configured", "max_fps", "max_resolution"]
 @dataclass(frozen=True)
 class ModelConfig:
     weights: str = "yolo26n.pt"
+    segmentation_weights: str = "yolo26n-seg.pt"
     confidence: float = 0.40
     selection_class: str = "person"
     overlay_classes: tuple[str, ...] = ("person", "dog")
@@ -77,6 +78,7 @@ def _load_model(raw: dict[str, Any]) -> ModelConfig:
     defaults = ModelConfig()
     return ModelConfig(
         weights=str(raw.get("weights", defaults.weights)),
+        segmentation_weights=str(raw.get("segmentation_weights", defaults.segmentation_weights)),
         confidence=float(raw.get("confidence", defaults.confidence)),
         selection_class=str(raw.get("selection_class", defaults.selection_class)),
         overlay_classes=tuple(str(item) for item in raw.get("overlay_classes", defaults.overlay_classes)),

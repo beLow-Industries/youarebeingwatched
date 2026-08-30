@@ -22,6 +22,10 @@ class ConfigTest(unittest.TestCase):
     def test_default_confidence_is_forty_percent(self) -> None:
         self.assertEqual(ModelConfig().confidence, 0.40)
 
+    def test_default_model_weights_keep_detection_and_segmentation_separate(self) -> None:
+        self.assertEqual(ModelConfig().weights, "yolo26n.pt")
+        self.assertEqual(ModelConfig().segmentation_weights, "yolo26n-seg.pt")
+
     def test_display_defaults_to_fullscreen(self) -> None:
         self.assertTrue(DisplayConfig().fullscreen)
 
@@ -51,6 +55,23 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(config.tracking.missing_linger_seconds, 0.75)
         self.assertEqual(config.tracking.reselect_interval_seconds, 1.5)
 
+    def test_loads_segmentation_weights(self) -> None:
+        with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False) as config_file:
+            config_file.write(
+                "[model]\n"
+                "weights = \"custom-detect.pt\"\n"
+                "segmentation_weights = \"custom-seg.pt\"\n"
+            )
+            config_path = Path(config_file.name)
+
+        try:
+            config = load_config(config_path)
+        finally:
+            config_path.unlink()
+
+        self.assertEqual(config.model.weights, "custom-detect.pt")
+        self.assertEqual(config.model.segmentation_weights, "custom-seg.pt")
+
 
 class CliTest(unittest.TestCase):
     def test_max_fps_flag_sets_camera_mode_strategy(self) -> None:
@@ -66,6 +87,12 @@ class CliTest(unittest.TestCase):
 
         config = run_app.call_args.args[0]
         self.assertEqual(config.sources.mode_strategy, "max_resolution")
+
+    def test_segmentation_flag_is_passed_to_app(self) -> None:
+        with patch.object(cli, "run_app", return_value=0) as run_app:
+            self.assertEqual(cli._run(["--config", "/tmp/missing-ybwatch.toml", "--mock", "--headless", "--segmentation"]), 0)
+
+        self.assertTrue(run_app.call_args.kwargs["segmentation"])
 
     def test_camera_mode_flags_are_mutually_exclusive(self) -> None:
         with patch("sys.stderr", io.StringIO()), self.assertRaises(SystemExit):

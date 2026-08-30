@@ -8,7 +8,7 @@ from typing import Iterable, Protocol
 
 from loguru import logger
 
-from .types import Box, Detection, Frame
+from .types import BinaryCropMask, Box, Detection, Frame, UnmaskedCrop
 
 
 class Detector(Protocol):
@@ -20,15 +20,16 @@ class Detector(Protocol):
 
 
 class YoloDetector:
-    def __init__(self, weights: str, confidence: float) -> None:
+    def __init__(self, weights: str, confidence: float, *, segmentation: bool = False) -> None:
         os.environ.setdefault("YOLO_CONFIG_DIR", str(Path(".ultralytics").resolve()))
 
         from ultralytics import YOLO
 
-        logger.info("loading YOLO weights={} confidence={}", weights, confidence)
+        logger.info("loading YOLO weights={} confidence={} segmentation={}", weights, confidence, segmentation)
         started = time.monotonic()
         self._model = YOLO(weights)
         self._confidence = confidence
+        self._segmentation = segmentation
         self._names = self._normalize_names(self._model.names)
         logger.info("loaded YOLO model in {:.3f}s classes={}", time.monotonic() - started, len(self._names))
 
@@ -62,10 +63,11 @@ class YoloDetector:
         if boxes is None:
             return detections
 
-        for box in boxes:
+        for index, box in enumerate(boxes):
             xyxy = box.xyxy[0].tolist()
             class_id = int(box.cls[0].item())
             confidence = float(box.conf[0].item())
+            mask = self._mask_from_result(result, index)
             detections.append(
                 Detection(
                     class_name=self._names.get(class_id, str(class_id)),
@@ -76,9 +78,29 @@ class YoloDetector:
                         x2=int(round(xyxy[2])),
                         y2=int(round(xyxy[3])),
                     ),
+                    mask=mask if mask is not None else UnmaskedCrop(),
                 )
             )
         return detections
+
+    def _mask_from_result(self, result: object, index: int) -> BinaryCropMask | None:
+        if not self._segmentation:
+            return None
+
+        masks = getattr(result, "masks", None)
+        mask_data = getattr(masks, "data", None)
+        if mask_data is None or index >= len(mask_data):
+            return None
+
+        item = mask_data[index]
+        if hasattr(item, "detach"):
+            item = item.detach()
+        if hasattr(item, "cpu"):
+            item = item.cpu()
+        if hasattr(item, "numpy"):
+            item = item.numpy()
+
+        return BinaryCropMask(data=item > 0.5)
 
     def _class_ids(self, class_names: Iterable[str] | None) -> list[int] | None:
         if class_names is None:

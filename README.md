@@ -28,6 +28,12 @@ Run with the default config:
 UV_CACHE_DIR=.uv-cache uv run ybwatch --config config/default.toml
 ```
 
+Run with YOLO segmentation masks instead of simple detection:
+
+```bash
+UV_CACHE_DIR=.uv-cache uv run ybwatch --config config/default.toml --segmentation
+```
+
 Prefer a camera's fastest MJPG mode, or its largest MJPG mode:
 
 ```bash
@@ -52,7 +58,7 @@ Inspect camera availability:
 UV_CACHE_DIR=.uv-cache uv run ybwatch doctor
 ```
 
-The first non-mock run downloads `yolo26n.pt` through Ultralytics if it is not already present.
+The first non-mock detection run downloads `yolo26n.pt` through Ultralytics if it is not already present. Segmentation mode downloads `yolo26n-seg.pt` by default.
 
 ## WSL Webcam Notes
 
@@ -99,9 +105,10 @@ Live cameras are captured on a background worker. The app keeps only the newest 
 - If one or more sources contain a person or dog, the next main output source is chosen randomly among them.
 - If neither is detected, the current output source remains active; if there is no source yet, the first readable source is displayed without overlays.
 - Detections use a default confidence threshold of `0.40`.
+- Detection mode is the default. Pass `--segmentation` to use YOLO instance masks for the displayed crops.
 - During a person-selected output interval, YOLO runs on the selected source for `person` and `dog`.
 - The image processor chooses detected people or dogs just after each 10-second source decision, then re-elects every second.
-- With one subject, output is cropped to that detection rectangle, fit to display height, centered on a black display canvas, and shown without overlays.
+- With one subject, output is cropped to that detection rectangle, fit to display height, centered on a black display canvas, and shown without overlays. In segmentation mode, pixels outside the selected subject mask are blacked out inside the crop.
 - With two subjects, the display is split into vertical thirds and the subjects are shown in the center and right thirds; with three or more subjects, three randomly chosen subjects fill all thirds.
 - If a tracked subject disappears, the processor keeps cropping the current frame at its last known rectangle for 0.5 seconds to smooth brief detector dropouts. After that grace window, it recomputes the arrangement from the visible people and dogs while keeping surviving subjects in their current thirds where possible; if none are visible, the original frame is shown.
 - `--headless` is only for development smoke checks; installation output is the OpenCV window.

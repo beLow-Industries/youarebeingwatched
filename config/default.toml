@@ -1,5 +1,6 @@
 [model]
 weights = "yolo26n.pt"
+segmentation_weights = "yolo26n-seg.pt"
 confidence = 0.40
 selection_class = "person"
 overlay_classes = ["person", "dog"]

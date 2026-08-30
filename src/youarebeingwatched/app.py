@@ -13,12 +13,20 @@ from .sources import Source, SourceManager
 from .types import Detection, Frame
 
 
-def run_app(config: AppConfig, *, mock: bool, headless: bool = False, max_frames: int | None = None) -> int:
+def run_app(
+    config: AppConfig,
+    *,
+    mock: bool,
+    headless: bool = False,
+    max_frames: int | None = None,
+    segmentation: bool = False,
+) -> int:
     logger.info(
-        "app start mock={} headless={} max_frames={} selection_interval={} max_fps={}",
+        "app start mock={} headless={} max_frames={} segmentation={} selection_interval={} max_fps={}",
         mock,
         headless,
         max_frames,
+        segmentation,
         config.selection.interval_seconds,
         config.display.max_fps,
     )
@@ -26,7 +34,8 @@ def run_app(config: AppConfig, *, mock: bool, headless: bool = False, max_frames
     if mock:
         detector = MockDetector()
     else:
-        detector = YoloDetector(config.model.weights, confidence=config.model.confidence)
+        weights = config.model.segmentation_weights if segmentation else config.model.weights
+        detector = YoloDetector(weights, confidence=config.model.confidence, segmentation=segmentation)
 
     source_manager = SourceManager.from_config(
         config.sources,

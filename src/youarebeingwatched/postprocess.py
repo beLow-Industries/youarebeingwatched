@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 
 from .config import DisplayConfig
-from .types import Box, Detection, Frame
+from .types import Box, CropMask, Detection, Frame
 
 
 @dataclass(frozen=True)
@@ -24,6 +24,7 @@ class TrackedObject:
     class_name: str
     box: Box
     display_box: Box
+    mask: CropMask
     last_seen_at: float
 
 
@@ -138,6 +139,7 @@ class PostProcessor:
                 class_name=detection.class_name,
                 box=detection.box,
                 display_box=detection.box,
+                mask=detection.mask,
                 last_seen_at=now,
             )
             for slot, detection in zip(slots, selected, strict=True)
@@ -186,13 +188,13 @@ class PostProcessor:
         return self._tracked_objects
 
 
-def _crop_to_display(frame: Frame, box: Box, display_width: int, display_height: int) -> Frame:
-    return _crop_to_canvas(frame, box, display_width, display_height)
+def _crop_to_display(frame: Frame, box: Box, mask: CropMask, display_width: int, display_height: int) -> Frame:
+    return _crop_to_canvas(frame, box, mask, display_width, display_height)
 
 
 def _compose_crops(frame: Frame, objects: list[TrackedObject], display_width: int, display_height: int) -> Frame:
     if len(objects) == 1 and objects[0].slot is None:
-        return _crop_to_display(frame, objects[0].display_box, display_width, display_height)
+        return _crop_to_display(frame, objects[0].display_box, objects[0].mask, display_width, display_height)
 
     canvas = _black_canvas(frame, display_width, display_height)
     edges = _third_edges(display_width)
@@ -200,25 +202,26 @@ def _compose_crops(frame: Frame, objects: list[TrackedObject], display_width: in
         slot = item.slot if item.slot is not None else 0
         slot_x1 = edges[slot]
         slot_x2 = edges[slot + 1]
-        if not _paste_crop(frame, item.display_box, canvas, slot_x1, slot_x2, display_height):
+        if not _paste_crop(frame, item.display_box, item.mask, canvas, slot_x1, slot_x2, display_height):
             return frame
     return canvas
 
 
-def _crop_to_canvas(frame: Frame, box: Box, display_width: int, display_height: int) -> Frame:
+def _crop_to_canvas(frame: Frame, box: Box, mask: CropMask, display_width: int, display_height: int) -> Frame:
     canvas = _black_canvas(frame, display_width, display_height)
-    if not _paste_crop(frame, box, canvas, 0, display_width, display_height):
+    if not _paste_crop(frame, box, mask, canvas, 0, display_width, display_height):
         return frame
     return canvas
 
 
-def _paste_crop(frame: Frame, box: Box, canvas: Frame, slot_x1: int, slot_x2: int, display_height: int) -> bool:
+def _paste_crop(frame: Frame, box: Box, mask: CropMask, canvas: Frame, slot_x1: int, slot_x2: int, display_height: int) -> bool:
     frame_height, frame_width = frame.shape[:2]
     clipped = _clip_box(box, frame_width, frame_height)
     if clipped is None:
         return False
 
     crop = frame[clipped.y1 : clipped.y2, clipped.x1 : clipped.x2]
+    crop = mask.apply(crop, clipped, frame.shape)
     crop_height, crop_width = crop.shape[:2]
     if crop_height <= 0 or crop_width <= 0:
         return False
@@ -275,6 +278,7 @@ def _match_tracked_objects(
                 class_name=detection.class_name,
                 box=detection.box,
                 display_box=_smooth_box(tracked.display_box, detection.box),
+                mask=detection.mask,
                 last_seen_at=now,
             )
         )
@@ -378,6 +382,7 @@ def _new_tracked_objects(
             class_name=detection.class_name,
             box=detection.box,
             display_box=detection.box,
+            mask=detection.mask,
             last_seen_at=now,
         )
         for slot, detection in zip(slots, selected)

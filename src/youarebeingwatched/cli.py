@@ -29,6 +29,7 @@ def _run(argv: list[str]) -> int:
     parser.add_argument("--headless", action="store_true", help="Run the processing loop without opening a window.")
     parser.add_argument("--max-frames", type=int, help="Exit after showing this many frames.")
     parser.add_argument("--scan-max", type=int, help="When auto-discovering cameras, scan indices 0 through N-1.")
+    parser.add_argument("--segmentation", action="store_true", help="Use YOLO segmentation masks to black out crop backgrounds.")
     mode_group = parser.add_mutually_exclusive_group()
     mode_group.add_argument("--max-fps", action="store_true", help="Use the highest-FPS MJPG camera mode above the configured minimum FPS.")
     mode_group.add_argument("--max-resolution", action="store_true", help="Use the largest MJPG camera mode, regardless of FPS.")
@@ -46,7 +47,7 @@ def _run(argv: list[str]) -> int:
         scan_max=args.scan_max,
         source_mode_strategy=source_mode_strategy,
     )
-    return run_app(config, mock=args.mock, headless=args.headless, max_frames=args.max_frames)
+    return run_app(config, mock=args.mock, headless=args.headless, max_frames=args.max_frames, segmentation=args.segmentation)
 
 
 def _doctor(argv: list[str]) -> int:
