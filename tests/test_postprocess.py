@@ -40,6 +40,33 @@ class SampleSequence:
 
 
 class PostProcessorTest(unittest.TestCase):
+    def test_margin_adds_source_pixels_around_crop(self) -> None:
+        frame = solid_frame(20, 20, (10, 10, 10))
+        frame[5:15, 5:15] = (200, 0, 0)
+        processor = PostProcessor(DisplayConfig(width=20, height=20), margin=5, rng=random.Random(0))
+
+        result = processor.process(frame, [detection(5, 5, 15, 15)], source_name="camera:0", should_crop=True, now=0.0)
+
+        self.assertTrue(np.all(result.frame[0, 0] == (10, 10, 10)))
+        self.assertTrue(np.all(result.frame[10, 10] == (200, 0, 0)))
+
+    def test_show_boxes_returns_box_in_composed_coordinates(self) -> None:
+        frame = solid_frame(20, 20, (10, 10, 10))
+        processor = PostProcessor(DisplayConfig(width=20, height=20), show_boxes=True, margin=5, rng=random.Random(0))
+
+        result = processor.process(frame, [detection(5, 5, 15, 15)], source_name="camera:0", should_crop=True, now=0.0)
+
+        self.assertEqual(result.detections[0].box, Box(5, 5, 15, 15))
+
+    def test_margin_pads_crop_when_detection_touches_source_edges(self) -> None:
+        frame = solid_frame(20, 20, (200, 0, 0))
+        processor = PostProcessor(DisplayConfig(width=20, height=20), show_boxes=True, margin=5, rng=random.Random(0))
+
+        result = processor.process(frame, [detection(0, 0, 20, 20)], source_name="camera:0", should_crop=True, now=0.0)
+
+        self.assertEqual(result.detections[0].box, Box(3, 3, 17, 17))
+        self.assertTrue(np.all(result.frame[0, 0] == 0))
+
     def test_crops_height_fit_and_centers_with_black_sides(self) -> None:
         frame = solid_frame(100, 80, (10, 20, 30))
         frame[10:70, 20:50] = (200, 40, 80)

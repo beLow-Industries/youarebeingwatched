@@ -7,46 +7,50 @@ Prototype software for an art installation that watches camera sources, selects 
 This project uses `uv`.
 
 ```bash
-UV_CACHE_DIR=.uv-cache uv sync
+uv sync
 ```
 
-Run the no-camera smoke check:
+Run the no-camera smoke check or the windowed prototype:
 
 ```bash
-UV_CACHE_DIR=.uv-cache uv run ybwatch --mock --headless --max-frames 120
+uv run ybwatch --mock --headless --max-frames 120
+uv run ybwatch --mock --windowed
 ```
 
-Run the no-camera windowed prototype:
+## Options
+
+Behavioral options:
+
+| Option | Description |
+| --- | --- |
+| `--do-not-track` | Show the full selected source frame with detection boxes instead of cropping to subjects. |
+| `--segmentation` | Use YOLO segmentation masks to black out crop backgrounds. |
+| `--show-box` | Draw detection boxes and labels. Labels use `human`/`doggo` and confidence percentages. |
+| `--margin PIXELS` | Add source pixels around each subject crop. |
+| `--threshold VALUE` | Set the detection confidence threshold from `0` to `1` (default: `0.4`). |
+| `--fullscreen` / `--windowed` | Force fullscreen or windowed output. Fullscreen output fills the detected display size. |
+| `--headless` | Run without opening an OpenCV window; useful for smoke checks. |
+
+Capture and runtime options:
+
+| Option | Description |
+| --- | --- |
+| `--source SOURCE` | Use a camera index or video/stream path. Repeat for multiple sources; disables auto-discovery. |
+| `--max-fps` | Select the highest-FPS MJPG camera mode above the configured minimum FPS. |
+| `--max-resolution` | Select the largest MJPG camera mode, regardless of FPS. |
+| `--scan-max N` | Auto-discover camera indices from `0` through `N - 1`. |
+| `--max-frames N` | Exit after showing `N` frames. |
+| `--mock` | Use a generated source and synthetic detections. |
+| `--log-level LEVEL` | Set logging verbosity (default: `INFO`). `YBWATCH_LOG_LEVEL` also sets the default. |
+
+Examples:
 
 ```bash
-UV_CACHE_DIR=.uv-cache uv run ybwatch --mock --windowed
-```
-
-Run with the default config:
-
-```bash
-UV_CACHE_DIR=.uv-cache uv run ybwatch --config config/default.toml
-```
-
-Run with YOLO segmentation masks instead of simple detection:
-
-```bash
-UV_CACHE_DIR=.uv-cache uv run ybwatch --config config/default.toml --segmentation
-```
-
-Prefer a camera's fastest MJPG mode, or its largest MJPG mode:
-
-```bash
-UV_CACHE_DIR=.uv-cache uv run ybwatch --max-fps
-UV_CACHE_DIR=.uv-cache uv run ybwatch --max-resolution
-```
-
-Run a camera or video source directly:
-
-```bash
-UV_CACHE_DIR=.uv-cache uv run ybwatch --source 0
-UV_CACHE_DIR=.uv-cache uv run ybwatch --source 4
-UV_CACHE_DIR=.uv-cache uv run ybwatch --source media/example.mp4
+uv run ybwatch --segmentation
+uv run ybwatch --do-not-track --show-box
+uv run ybwatch --margin 40 --source 0
+uv run ybwatch --max-fps
+uv run ybwatch --max-resolution
 ```
 
 Info logging is enabled by default. Use `--log-level DEBUG` or `YBWATCH_LOG_LEVEL=DEBUG` for per-frame detail.
@@ -55,7 +59,7 @@ Press `q` in the OpenCV window to exit. Display output is fullscreen by default;
 Inspect camera availability:
 
 ```bash
-UV_CACHE_DIR=.uv-cache uv run ybwatch doctor
+uv run ybwatch doctor
 ```
 
 The first non-mock detection run downloads `yolo26n.pt` through Ultralytics if it is not already present. Segmentation mode downloads `yolo26n-seg.pt` by default.
@@ -76,7 +80,7 @@ Then confirm Linux can see the device:
 
 ```bash
 ls /dev/video*
-UV_CACHE_DIR=.uv-cache uv run ybwatch doctor
+uv run ybwatch doctor
 ```
 
 If `doctor` shows `/dev/video*` devices owned by `root:video` but `read=False` or `write=False`, add your WSL user to the video group and restart WSL:
@@ -93,13 +97,13 @@ wsl.exe --shutdown
 
 Avoid running the app with `sudo`: `uv` is usually installed in the user PATH, and root-owned `.venv` files are annoying to clean up.
 
-The default camera capture settings prefer `640x480` MJPG, then automatically choose a camera mode that can provide at least `25 fps`. Use `--max-fps` to select the fastest MJPG mode above that threshold, preferring smaller frames when FPS ties, or `--max-resolution` to select the largest MJPG mode regardless of FPS. Adjust `capture_fps`, `capture_width`, or `capture_height` in `config/default.toml` if a camera needs a different target.
+The default camera capture settings prefer `640x480` MJPG, then automatically choose a camera mode that can provide at least `25 fps`. Use `--max-fps` to select the fastest MJPG mode above that threshold, preferring smaller frames when FPS ties, or `--max-resolution` to select the largest MJPG mode regardless of FPS. Auto-discovery scans camera indices `0` through `9`; use `--scan-max` to change that range.
 
 Live cameras are captured on a background worker. The app keeps only the newest frame, drops stale frames when processing falls behind, and reopens the camera if reads stall or repeatedly fail. High-risk camera modes selected by `--max-fps` or `--max-resolution` can fall back to safer MJPG modes during recovery; `--max-resolution` descends through lower resolutions progressively.
 
 ## Behavior
 
-- Source discovery combines configured sources with an auto-scan of OpenCV camera indices.
+- Source discovery combines explicit `--source` values with an auto-scan of OpenCV camera indices.
 - Live camera reads use latest-frame backpressure so YOLO/display work does not block the capture device.
 - Every 10 seconds, the app runs one YOLO pass over current frames from all active sources.
 - If one or more sources contain a person or dog, the next main output source is chosen randomly among them.

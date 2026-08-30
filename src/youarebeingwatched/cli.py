@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import argparse
 import os
-from pathlib import Path
 import sys
 
 from loguru import logger
 
 from .app import run_app
-from .config import load_config, with_display_overrides, with_source_overrides
+from .config import AppConfig, with_display_overrides, with_source_overrides
 from .doctor import run_doctor
 
 
@@ -21,7 +20,6 @@ def main(argv: list[str] | None = None) -> int:
 
 def _run(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="ybwatch")
-    parser.add_argument("--config", type=Path, default=Path("config/default.toml"))
     parser.add_argument("--source", action="append", help="OpenCV camera index or video/stream path. Can be repeated.")
     parser.add_argument("--mock", action="store_true", help="Use a generated mock source and synthetic detections.")
     parser.add_argument("--fullscreen", action="store_true", default=None, help="Force fullscreen output.")
@@ -30,15 +28,18 @@ def _run(argv: list[str]) -> int:
     parser.add_argument("--max-frames", type=int, help="Exit after showing this many frames.")
     parser.add_argument("--scan-max", type=int, help="When auto-discovering cameras, scan indices 0 through N-1.")
     parser.add_argument("--segmentation", action="store_true", help="Use YOLO segmentation masks to black out crop backgrounds.")
+    parser.add_argument("--threshold", type=_threshold, default=None, help="Detection confidence threshold (default: 0.4).")
+    parser.add_argument("--show-box", action="store_true", help="Draw detection boxes and labels.")
+    parser.add_argument("--margin", type=_nonnegative_int, default=0, help="Add this many source pixels around each crop.")
+    parser.add_argument("--do-not-track", action="store_true", help="Show the full selected source frame with detection boxes.")
     mode_group = parser.add_mutually_exclusive_group()
-    mode_group.add_argument("--max-fps", action="store_true", help="Use the highest-FPS MJPG camera mode above the configured minimum FPS.")
+    mode_group.add_argument("--max-fps", action="store_true", help="Use the highest-FPS MJPG camera mode above the default minimum FPS.")
     mode_group.add_argument("--max-resolution", action="store_true", help="Use the largest MJPG camera mode, regardless of FPS.")
     parser.add_argument("--log-level", default=os.environ.get("YBWATCH_LOG_LEVEL", "INFO"))
     args = parser.parse_args(argv)
 
     _configure_logging(args.log_level)
-    config = load_config(args.config)
-    logger.debug("loaded config from {}", args.config)
+    config = AppConfig()
     config = with_source_overrides(config, args.source)
     source_mode_strategy = "max_fps" if args.max_fps else "max_resolution" if args.max_resolution else None
     config = with_display_overrides(
@@ -47,12 +48,42 @@ def _run(argv: list[str]) -> int:
         scan_max=args.scan_max,
         source_mode_strategy=source_mode_strategy,
     )
-    return run_app(config, mock=args.mock, headless=args.headless, max_frames=args.max_frames, segmentation=args.segmentation)
+    return run_app(
+        config,
+        mock=args.mock,
+        headless=args.headless,
+        max_frames=args.max_frames,
+        segmentation=args.segmentation,
+        threshold=args.threshold,
+        show_box=args.show_box,
+        margin=args.margin,
+        do_not_track=args.do_not_track,
+    )
+
+
+def _nonnegative_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be an integer") from exc
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("must be non-negative")
+    return parsed
+
+
+def _threshold(value: str) -> float:
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a number between 0 and 1") from exc
+    if not 0.0 <= parsed <= 1.0:
+        raise argparse.ArgumentTypeError("must be between 0 and 1")
+    return parsed
 
 
 def _doctor(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="ybwatch doctor")
-    parser.add_argument("--scan-max", type=int, default=5)
+    parser.add_argument("--scan-max", type=int, default=10)
     parser.add_argument("--log-level", default=os.environ.get("YBWATCH_LOG_LEVEL", "INFO"))
     args = parser.parse_args(argv)
     _configure_logging(args.log_level)

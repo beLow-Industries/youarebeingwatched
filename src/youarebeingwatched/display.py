@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ctypes
 import ctypes.util
+import math
 import os
 import platform
 import time
@@ -13,8 +14,9 @@ import numpy as np
 from .config import DisplayConfig
 from .types import Detection, Frame
 
-PERSON_COLOR = (0, 255, 80)
-DOG_COLOR = (255, 180, 0)
+BOX_COLOR = (255, 255, 255)
+LABEL_BACKGROUND = (255, 255, 255)
+LABEL_COLOR = (0, 0, 0)
 TEXT_COLOR = (245, 245, 245)
 
 
@@ -29,15 +31,16 @@ class Display:
             config.height,
         )
         _assert_x_display_available()
+        self._fullscreen_size = _screen_size() if config.fullscreen else None
         cv2.namedWindow(config.window_name, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(config.window_name, config.width, config.height)
         if config.fullscreen:
             cv2.setWindowProperty(config.window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
         logger.info("display ready window={}", config.window_name)
 
-    def show(self, frame: Frame, detections: list[Detection], source_name: str, *, show_source_label: bool = True) -> bool:
+    def show(self, frame: Frame, detections: list[Detection], source_name: str, *, show_source_label: bool = True, show_boxes: bool = False) -> bool:
         started = time.monotonic()
-        rendered = draw_detections(frame, detections)
+        rendered = draw_detections(frame, detections) if show_boxes else frame.copy()
         render_elapsed = time.monotonic() - started
         if show_source_label:
             cv2.putText(
@@ -50,6 +53,8 @@ class Display:
                 2,
                 cv2.LINE_AA,
             )
+        if self._fullscreen_size is not None:
+            rendered = _cover_frame(rendered, *self._fullscreen_size)
         imshow_started = time.monotonic()
         cv2.imshow(self.config.window_name, rendered)
         imshow_elapsed = time.monotonic() - imshow_started
@@ -75,7 +80,7 @@ class HeadlessDisplay:
     def __init__(self) -> None:
         self._last_printed = 0.0
 
-    def show(self, frame: Frame, detections: list[Detection], source_name: str, *, show_source_label: bool = True) -> bool:
+    def show(self, frame: Frame, detections: list[Detection], source_name: str, *, show_source_label: bool = True, show_boxes: bool = False) -> bool:
         now = time.monotonic()
         if now - self._last_printed >= 1.0:
             height, width = frame.shape[:2]
@@ -90,13 +95,29 @@ class HeadlessDisplay:
 def draw_detections(frame: Frame, detections: list[Detection]) -> Frame:
     rendered = frame.copy()
     for detection in detections:
-        color = PERSON_COLOR if detection.class_name == "person" else DOG_COLOR
         box = detection.box
-        cv2.rectangle(rendered, (box.x1, box.y1), (box.x2, box.y2), color, 2)
-        label = f"{detection.class_name} {detection.confidence:.2f}"
+        cv2.rectangle(rendered, (box.x1, box.y1), (box.x2, box.y2), BOX_COLOR, 2)
+        label = _detection_label(detection)
         text_origin = (box.x1, max(22, box.y1 - 8))
-        cv2.putText(rendered, label, text_origin, cv2.FONT_HERSHEY_SIMPLEX, 0.65, color, 2, cv2.LINE_AA)
+        (text_width, text_height), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.65, 2)
+        padding = 3
+        label_top = max(0, text_origin[1] - text_height - padding)
+        label_bottom = min(rendered.shape[0], text_origin[1] + baseline + padding)
+        label_right = min(rendered.shape[1], text_origin[0] + text_width + padding)
+        cv2.rectangle(
+            rendered,
+            (text_origin[0], label_top),
+            (label_right, label_bottom),
+            LABEL_BACKGROUND,
+            cv2.FILLED,
+        )
+        cv2.putText(rendered, label, text_origin, cv2.FONT_HERSHEY_SIMPLEX, 0.65, LABEL_COLOR, 2, cv2.LINE_AA)
     return rendered
+
+
+def _detection_label(detection: Detection) -> str:
+    name = {"person": "human", "dog": "doggo"}.get(detection.class_name, detection.class_name)
+    return f"{name} ({detection.confidence:.0%})"
 
 
 def waiting_frame(width: int, height: int, message: str = "waiting for source") -> Frame:
@@ -117,6 +138,56 @@ def waiting_frame(width: int, height: int, message: str = "waiting for source") 
 
 def _should_continue(key: int) -> bool:
     return key not in (ord("q"), ord("Q"), 27)
+
+
+def _cover_frame(frame: Frame, target_width: int, target_height: int) -> Frame:
+    """Scale a frame to fill the target and center-crop any excess."""
+    frame_height, frame_width = frame.shape[:2]
+    if (frame_width, frame_height) == (target_width, target_height):
+        return frame
+
+    scale = max(target_width / frame_width, target_height / frame_height)
+    scaled_width = max(target_width, math.ceil(frame_width * scale))
+    scaled_height = max(target_height, math.ceil(frame_height * scale))
+    resized = cv2.resize(frame, (scaled_width, scaled_height), interpolation=cv2.INTER_LINEAR)
+    x = (scaled_width - target_width) // 2
+    y = (scaled_height - target_height) // 2
+    return resized[y : y + target_height, x : x + target_width]
+
+
+def _screen_size() -> tuple[int, int] | None:
+    if platform.system() != "Linux":
+        return None
+
+    display = os.environ.get("DISPLAY")
+    lib_name = ctypes.util.find_library("X11")
+    if not display or lib_name is None:
+        return None
+
+    lib_x11 = ctypes.cdll.LoadLibrary(lib_name)
+    lib_x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
+    lib_x11.XOpenDisplay.restype = ctypes.c_void_p
+    lib_x11.XDefaultScreen.argtypes = [ctypes.c_void_p]
+    lib_x11.XDefaultScreen.restype = ctypes.c_int
+    lib_x11.XDisplayWidth.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    lib_x11.XDisplayWidth.restype = ctypes.c_int
+    lib_x11.XDisplayHeight.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    lib_x11.XDisplayHeight.restype = ctypes.c_int
+    lib_x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
+
+    handle = lib_x11.XOpenDisplay(display.encode())
+    if not handle:
+        return None
+    try:
+        screen = lib_x11.XDefaultScreen(handle)
+        width = lib_x11.XDisplayWidth(handle, screen)
+        height = lib_x11.XDisplayHeight(handle, screen)
+    finally:
+        lib_x11.XCloseDisplay(handle)
+    if width <= 0 or height <= 0:
+        return None
+    logger.info("fullscreen display size={}x{}", width, height)
+    return width, height
 
 
 def _assert_x_display_available() -> None:

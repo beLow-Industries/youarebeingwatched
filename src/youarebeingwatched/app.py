@@ -5,7 +5,7 @@ import time
 
 from loguru import logger
 
-from .config import AppConfig
+from .config import OVERLAY_CLASSES, AppConfig
 from .detector import Detector, MockDetector, YoloDetector
 from .display import Display, HeadlessDisplay, waiting_frame
 from .postprocess import PostProcessor
@@ -20,13 +20,21 @@ def run_app(
     headless: bool = False,
     max_frames: int | None = None,
     segmentation: bool = False,
+    threshold: float | None = None,
+    show_box: bool = False,
+    margin: int = 0,
+    do_not_track: bool = False,
 ) -> int:
     logger.info(
-        "app start mock={} headless={} max_frames={} segmentation={} selection_interval={} max_fps={}",
+        "app start mock={} headless={} max_frames={} segmentation={} threshold={} show_box={} margin={} do_not_track={} selection_interval={} max_fps={}",
         mock,
         headless,
         max_frames,
         segmentation,
+        threshold if threshold is not None else config.model.confidence,
+        show_box,
+        margin,
+        do_not_track,
         config.selection.interval_seconds,
         config.display.max_fps,
     )
@@ -35,7 +43,11 @@ def run_app(
         detector = MockDetector()
     else:
         weights = config.model.segmentation_weights if segmentation else config.model.weights
-        detector = YoloDetector(weights, confidence=config.model.confidence, segmentation=segmentation)
+        detector = YoloDetector(
+            weights,
+            confidence=threshold if threshold is not None else config.model.confidence,
+            segmentation=segmentation,
+        )
 
     source_manager = SourceManager.from_config(
         config.sources,
@@ -50,11 +62,14 @@ def run_app(
         logger.error("display unavailable: {}", exc)
         return 2
 
+    effective_show_box = show_box or do_not_track
     postprocessor = PostProcessor(
         config.display,
-        selection_classes=config.model.overlay_classes,
+        selection_classes=OVERLAY_CLASSES,
         selection_interval_seconds=config.tracking.reselect_interval_seconds,
         missing_linger_seconds=config.tracking.missing_linger_seconds,
+        show_boxes=effective_show_box,
+        margin=margin,
     )
 
     selected_source: Source | None = source_manager.sources[0] if mock and source_manager.sources else None
@@ -101,7 +116,7 @@ def run_app(
             detections: list[Detection] = []
             if should_overlay:
                 detect_started = time.monotonic()
-                detections = detector.detect(frame, class_names=config.model.overlay_classes)
+                detections = detector.detect(frame, class_names=OVERLAY_CLASSES)
                 logger.debug("overlay detections source={} count={} elapsed={:.3f}s", source_name, len(detections), time.monotonic() - detect_started)
 
             process_started = time.monotonic()
@@ -109,7 +124,7 @@ def run_app(
                 frame,
                 detections,
                 source_name=source_name,
-                should_crop=should_overlay,
+                should_crop=should_overlay and not do_not_track,
                 now=loop_started,
             )
             logger.debug(
@@ -120,7 +135,13 @@ def run_app(
             )
 
             display_started = time.monotonic()
-            if not display.show(result.frame, result.detections, source_name, show_source_label=result.show_source_label):
+            if not display.show(
+                result.frame,
+                result.detections,
+                source_name,
+                show_source_label=result.show_source_label,
+                show_boxes=effective_show_box,
+            ):
                 logger.info("display requested shutdown")
                 return 0
             display_elapsed = time.monotonic() - display_started
@@ -158,7 +179,7 @@ def _select_source(
         return current_source
 
     frames = [frame for _source, frame in source_frames]
-    selection_classes = set(config.model.overlay_classes)
+    selection_classes = set(OVERLAY_CLASSES)
     detections_by_frame = detector.detect_batch(frames, class_names=selection_classes)
     candidates: list[Source] = []
 

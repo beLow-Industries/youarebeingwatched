@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import io
-from pathlib import Path
-import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -11,8 +9,8 @@ from youarebeingwatched.config import (
     AppConfig,
     DisplayConfig,
     ModelConfig,
+    SourcesConfig,
     TrackingConfig,
-    load_config,
     with_display_overrides,
 )
 from youarebeingwatched.v4l2 import CameraMode, select_camera_mode
@@ -29,6 +27,9 @@ class ConfigTest(unittest.TestCase):
     def test_display_defaults_to_fullscreen(self) -> None:
         self.assertTrue(DisplayConfig().fullscreen)
 
+    def test_sources_scan_the_first_ten_camera_indices_by_default(self) -> None:
+        self.assertEqual(SourcesConfig().scan_indices, tuple(range(10)))
+
     def test_source_mode_strategy_overrides(self) -> None:
         config = with_display_overrides(AppConfig(), fullscreen=None, scan_max=None, source_mode_strategy="max_resolution")
 
@@ -38,65 +39,61 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(TrackingConfig().missing_linger_seconds, 0.5)
         self.assertEqual(TrackingConfig().reselect_interval_seconds, 1.0)
 
-    def test_loads_tracking_config(self) -> None:
-        with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False) as config_file:
-            config_file.write(
-                "[tracking]\n"
-                "missing_linger_seconds = 0.75\n"
-                "reselect_interval_seconds = 1.5\n"
-            )
-            config_path = Path(config_file.name)
-
-        try:
-            config = load_config(config_path)
-        finally:
-            config_path.unlink()
-
-        self.assertEqual(config.tracking.missing_linger_seconds, 0.75)
-        self.assertEqual(config.tracking.reselect_interval_seconds, 1.5)
-
-    def test_loads_segmentation_weights(self) -> None:
-        with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False) as config_file:
-            config_file.write(
-                "[model]\n"
-                "weights = \"custom-detect.pt\"\n"
-                "segmentation_weights = \"custom-seg.pt\"\n"
-            )
-            config_path = Path(config_file.name)
-
-        try:
-            config = load_config(config_path)
-        finally:
-            config_path.unlink()
-
-        self.assertEqual(config.model.weights, "custom-detect.pt")
-        self.assertEqual(config.model.segmentation_weights, "custom-seg.pt")
-
-
 class CliTest(unittest.TestCase):
     def test_max_fps_flag_sets_camera_mode_strategy(self) -> None:
         with patch.object(cli, "run_app", return_value=0) as run_app:
-            self.assertEqual(cli._run(["--config", "/tmp/missing-ybwatch.toml", "--mock", "--headless", "--max-fps"]), 0)
+            self.assertEqual(cli._run(["--mock", "--headless", "--max-fps"]), 0)
 
         config = run_app.call_args.args[0]
         self.assertEqual(config.sources.mode_strategy, "max_fps")
 
     def test_max_resolution_flag_sets_camera_mode_strategy(self) -> None:
         with patch.object(cli, "run_app", return_value=0) as run_app:
-            self.assertEqual(cli._run(["--config", "/tmp/missing-ybwatch.toml", "--mock", "--headless", "--max-resolution"]), 0)
+            self.assertEqual(cli._run(["--mock", "--headless", "--max-resolution"]), 0)
 
         config = run_app.call_args.args[0]
         self.assertEqual(config.sources.mode_strategy, "max_resolution")
 
     def test_segmentation_flag_is_passed_to_app(self) -> None:
         with patch.object(cli, "run_app", return_value=0) as run_app:
-            self.assertEqual(cli._run(["--config", "/tmp/missing-ybwatch.toml", "--mock", "--headless", "--segmentation"]), 0)
+            self.assertEqual(cli._run(["--mock", "--headless", "--segmentation"]), 0)
 
         self.assertTrue(run_app.call_args.kwargs["segmentation"])
+
+    def test_threshold_flag_is_passed_to_app(self) -> None:
+        with patch.object(cli, "run_app", return_value=0) as run_app:
+            self.assertEqual(cli._run(["--mock", "--headless", "--threshold", "0.65"]), 0)
+
+        self.assertEqual(run_app.call_args.kwargs["threshold"], 0.65)
+
+    def test_threshold_must_be_between_zero_and_one(self) -> None:
+        with patch("sys.stderr", io.StringIO()), self.assertRaises(SystemExit):
+            cli._run(["--threshold", "1.1"])
+
+    def test_box_margin_and_no_track_flags_are_passed_to_app(self) -> None:
+        with patch.object(cli, "run_app", return_value=0) as run_app:
+            self.assertEqual(
+                cli._run(["--mock", "--headless", "--show-box", "--margin", "10", "--do-not-track"]),
+                0,
+            )
+
+        self.assertTrue(run_app.call_args.kwargs["show_box"])
+        self.assertEqual(run_app.call_args.kwargs["margin"], 10)
+        self.assertTrue(run_app.call_args.kwargs["do_not_track"])
+
+    def test_margin_must_be_nonnegative(self) -> None:
+        with patch("sys.stderr", io.StringIO()), self.assertRaises(SystemExit):
+            cli._run(["--margin", "-1"])
 
     def test_camera_mode_flags_are_mutually_exclusive(self) -> None:
         with patch("sys.stderr", io.StringIO()), self.assertRaises(SystemExit):
             cli._run(["--max-fps", "--max-resolution"])
+
+    def test_doctor_scans_ten_indices_by_default(self) -> None:
+        with patch.object(cli, "run_doctor", return_value=0) as run_doctor:
+            self.assertEqual(cli.main(["doctor"]), 0)
+
+        run_doctor.assert_called_once_with(10)
 
 
 class V4l2SelectionTest(unittest.TestCase):
