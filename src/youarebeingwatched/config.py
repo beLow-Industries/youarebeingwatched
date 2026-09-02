@@ -24,6 +24,7 @@ class SelectionConfig:
 class TrackingConfig:
     missing_linger_seconds: float = 0.5
     reselect_interval_seconds: float = 1.0
+    stabilize_box_pixels: float = 16.0
 
 
 @dataclass(frozen=True)

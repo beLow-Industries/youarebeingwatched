@@ -23,10 +23,11 @@ def run_app(
     threshold: float | None = None,
     show_box: bool = False,
     margin: int = 0,
+    stabilize_box: float | None = None,
     do_not_track: bool = False,
 ) -> int:
     logger.info(
-        "app start mock={} headless={} max_frames={} segmentation={} threshold={} show_box={} margin={} do_not_track={} selection_interval={} max_fps={}",
+        "app start mock={} headless={} max_frames={} segmentation={} threshold={} show_box={} margin={} stabilize_box={} do_not_track={} selection_interval={} max_fps={}",
         mock,
         headless,
         max_frames,
@@ -34,6 +35,7 @@ def run_app(
         threshold if threshold is not None else config.model.confidence,
         show_box,
         margin,
+        stabilize_box if stabilize_box is not None else config.tracking.stabilize_box_pixels,
         do_not_track,
         config.selection.interval_seconds,
         config.display.max_fps,
@@ -68,6 +70,7 @@ def run_app(
         selection_classes=OVERLAY_CLASSES,
         selection_interval_seconds=config.tracking.reselect_interval_seconds,
         missing_linger_seconds=config.tracking.missing_linger_seconds,
+        stabilize_box_pixels=stabilize_box if stabilize_box is not None else config.tracking.stabilize_box_pixels,
         show_boxes=effective_show_box,
         margin=margin,
     )

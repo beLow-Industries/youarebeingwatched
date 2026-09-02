@@ -27,6 +27,7 @@ Behavioral options:
 | `--segmentation` | Use YOLO segmentation masks to black out crop backgrounds. |
 | `--show-box` | Draw detection boxes and labels. Labels use `human`/`doggo` and confidence percentages. |
 | `--margin PIXELS` | Add source pixels around each subject crop. |
+| `--stabilize-box PIXELS` | Hold crop targets until a box edge moves this many source pixels (default: `16`). |
 | `--threshold VALUE` | Set the detection confidence threshold from `0` to `1` (default: `0.4`). |
 | `--fullscreen` / `--windowed` | Force fullscreen or windowed output. Fullscreen output fills the detected display size. |
 | `--headless` | Run without opening an OpenCV window; useful for smoke checks. |
@@ -111,6 +112,7 @@ Live cameras are captured on a background worker. The app keeps only the newest 
 - Detections use a default confidence threshold of `0.40`.
 - Detection mode is the default. Pass `--segmentation` to use YOLO instance masks for the displayed crops.
 - During a person-selected output interval, YOLO runs on the selected source for `person` and `dog`.
+- Crop targets update only when a YOLO box edge deviates from the held crop box by `--stabilize-box` source pixels, then ease toward the new target.
 - The image processor chooses detected people or dogs just after each 10-second source decision, then re-elects every second.
 - With one subject, output is cropped to that detection rectangle, fit to display height, centered on a black display canvas, and shown without overlays. In segmentation mode, pixels outside the selected subject mask are blacked out inside the crop.
 - With two subjects, the display is split into vertical thirds and the subjects are shown in the center and right thirds; with three or more subjects, three randomly chosen subjects fill all thirds.

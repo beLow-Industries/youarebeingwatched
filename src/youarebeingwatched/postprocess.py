@@ -24,6 +24,7 @@ class TrackedObject:
     class_name: str
     confidence: float
     box: Box
+    target_box: Box
     display_box: Box
     mask: CropMask
     last_seen_at: float
@@ -42,6 +43,7 @@ class PostProcessor:
         selection_classes: tuple[str, ...] = ("person", "dog"),
         selection_interval_seconds: float = 1.0,
         missing_linger_seconds: float = 0.5,
+        stabilize_box_pixels: float = 16.0,
         show_boxes: bool = False,
         margin: int = 0,
         rng: random.Random | None = None,
@@ -51,6 +53,7 @@ class PostProcessor:
         self._selection_classes = set(selection_classes)
         self._selection_interval_seconds = selection_interval_seconds
         self._missing_linger_seconds = missing_linger_seconds
+        self._stabilize_box_pixels = stabilize_box_pixels
         self._show_boxes = show_boxes
         self._margin = margin
         self._rng = rng or random.Random()
@@ -108,7 +111,7 @@ class PostProcessor:
                 return []
             return self._elect_objects(candidates, now)
 
-        matched, missed, remaining = _match_tracked_objects(self._tracked_objects, candidates, now)
+        matched, missed, remaining = _match_tracked_objects(self._tracked_objects, candidates, now, self._stabilize_box_pixels)
         lingering = self._lingering_objects(missed, now)
 
         if now >= self._next_selection_at and not lingering:
@@ -136,6 +139,7 @@ class PostProcessor:
         return []
 
     def _elect_objects(self, candidates: list[Detection], now: float) -> list[TrackedObject]:
+        previous = list(self._tracked_objects)
         selected_count = min(3, len(candidates))
         if selected_count == len(candidates):
             selected = list(candidates)
@@ -144,18 +148,32 @@ class PostProcessor:
 
         selected.sort(key=lambda detection: _box_center_x(detection.box))
         slots = _slots_for_count(selected_count)
-        self._tracked_objects = [
-            TrackedObject(
-                slot=slot,
-                class_name=detection.class_name,
-                confidence=detection.confidence,
-                box=detection.box,
-                display_box=detection.box,
-                mask=detection.mask,
-                last_seen_at=now,
+        self._tracked_objects = []
+        for slot, detection in zip(slots, selected, strict=True):
+            matched = _match_tracked_object(detection.box, previous)
+            if matched is not None:
+                previous.remove(matched)
+                target_box = (
+                    detection.box
+                    if _box_deviates(matched.target_box, detection.box, self._stabilize_box_pixels)
+                    else matched.target_box
+                )
+                display_box = _smooth_box(matched.display_box, target_box)
+            else:
+                target_box = detection.box
+                display_box = detection.box
+            self._tracked_objects.append(
+                TrackedObject(
+                    slot=slot,
+                    class_name=detection.class_name,
+                    confidence=detection.confidence,
+                    box=detection.box,
+                    target_box=target_box,
+                    display_box=display_box,
+                    mask=detection.mask,
+                    last_seen_at=now,
+                )
             )
-            for slot, detection in zip(slots, selected, strict=True)
-        ]
         self._force_selection = False
         self._next_selection_at = now + self._selection_interval_seconds
         return self._tracked_objects
@@ -325,6 +343,7 @@ def _match_tracked_objects(
     tracked_objects: list[TrackedObject],
     candidates: list[Detection],
     now: float,
+    stabilize_box_pixels: float,
 ) -> tuple[list[TrackedObject], list[TrackedObject], list[Detection]]:
     remaining = list(candidates)
     matched: list[TrackedObject] = []
@@ -335,13 +354,19 @@ def _match_tracked_objects(
             missed.append(tracked)
             continue
         remaining.remove(detection)
+        target_box = (
+            detection.box
+            if _box_deviates(tracked.target_box, detection.box, stabilize_box_pixels)
+            else tracked.target_box
+        )
         matched.append(
             TrackedObject(
                 slot=tracked.slot,
                 class_name=detection.class_name,
                 confidence=detection.confidence,
                 box=detection.box,
-                display_box=_smooth_box(tracked.display_box, detection.box),
+                target_box=target_box,
+                display_box=_smooth_box(tracked.display_box, target_box),
                 mask=detection.mask,
                 last_seen_at=now,
             )
@@ -359,6 +384,21 @@ def _match_detection(tracked_box: Box, people: list[Detection]) -> Detection | N
 
     best_distance = min(people, key=lambda detection: _center_distance_squared(tracked_box, detection.box))
     if _center_distance_squared(tracked_box, best_distance.box) <= _distance_threshold_squared(tracked_box):
+        return best_distance
+
+    return None
+
+
+def _match_tracked_object(detection_box: Box, tracked_objects: list[TrackedObject]) -> TrackedObject | None:
+    if not tracked_objects:
+        return None
+
+    best_iou = max(tracked_objects, key=lambda item: _iou(detection_box, item.box))
+    if _iou(detection_box, best_iou.box) >= 0.1:
+        return best_iou
+
+    best_distance = min(tracked_objects, key=lambda item: _center_distance_squared(detection_box, item.box))
+    if _center_distance_squared(detection_box, best_distance.box) <= _distance_threshold_squared(detection_box):
         return best_distance
 
     return None
@@ -411,6 +451,15 @@ def _smooth_box(previous: Box, current: Box) -> Box:
     )
 
 
+def _box_deviates(previous: Box, current: Box, threshold: float) -> bool:
+    return max(
+        abs(previous.x1 - current.x1),
+        abs(previous.y1 - current.y1),
+        abs(previous.x2 - current.x2),
+        abs(previous.y2 - current.y2),
+    ) >= threshold
+
+
 def _slots_for_count(count: int) -> list[int | None]:
     if count == 1:
         return [None]
@@ -446,6 +495,7 @@ def _new_tracked_objects(
             class_name=detection.class_name,
             confidence=detection.confidence,
             box=detection.box,
+            target_box=detection.box,
             display_box=detection.box,
             mask=detection.mask,
             last_seen_at=now,

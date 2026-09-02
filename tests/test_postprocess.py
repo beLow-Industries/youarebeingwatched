@@ -132,15 +132,51 @@ class PostProcessorTest(unittest.TestCase):
         frame[:, :40] = (255, 0, 0)
         frame[:, 40:80] = (0, 255, 0)
         frame[:, 80:] = (0, 0, 255)
-        processor = PostProcessor(DisplayConfig(width=40, height=40), rng=random.Random(0))
+        processor = PostProcessor(DisplayConfig(width=40, height=40), stabilize_box_pixels=0, rng=random.Random(0))
 
         first = processor.process(frame, [detection(0, 0, 40, 40)], source_name="camera:0", should_crop=True, now=0.0)
-        second = processor.process(frame, [detection(8, 0, 48, 40)], source_name="camera:0", should_crop=True, now=0.5)
+        second = processor.process(frame, [detection(8, 0, 48, 40)], source_name="camera:0", should_crop=True, now=1.0)
 
         self.assertTrue(np.all(first.frame == (255, 0, 0)))
         self.assertGreater(np.mean(second.frame[:, :, 0]), 100)
         self.assertGreater(np.mean(second.frame[:, :, 1]), 5)
         self.assertLess(np.mean(second.frame[:, :, 2]), 5)
+
+    def test_small_box_jitter_does_not_update_crop_target(self) -> None:
+        frame = np.zeros((40, 120, 3), dtype=np.uint8)
+        frame[:, :40] = (255, 0, 0)
+        frame[:, 40:80] = (0, 255, 0)
+        processor = PostProcessor(DisplayConfig(width=40, height=40), stabilize_box_pixels=16, rng=random.Random(0))
+
+        first = processor.process(frame, [detection(0, 0, 40, 40)], source_name="camera:0", should_crop=True, now=0.0)
+        second = processor.process(frame, [detection(8, 0, 48, 40)], source_name="camera:0", should_crop=True, now=1.0)
+
+        self.assertTrue(np.array_equal(first.frame, second.frame))
+
+    def test_large_box_deviation_updates_crop_target_with_easing(self) -> None:
+        frame = np.zeros((40, 120, 3), dtype=np.uint8)
+        frame[:, :40] = (255, 0, 0)
+        frame[:, 40:80] = (0, 255, 0)
+        processor = PostProcessor(DisplayConfig(width=40, height=40), stabilize_box_pixels=16, rng=random.Random(0))
+
+        first = processor.process(frame, [detection(0, 0, 40, 40)], source_name="camera:0", should_crop=True, now=0.0)
+        second = processor.process(frame, [detection(16, 0, 56, 40)], source_name="camera:0", should_crop=True, now=0.5)
+
+        self.assertFalse(np.array_equal(first.frame, second.frame))
+        self.assertGreater(np.mean(second.frame[:, :, 0]), 100)
+        self.assertGreater(np.mean(second.frame[:, :, 1]), 5)
+
+    def test_latest_detection_keeps_matching_while_crop_target_is_held(self) -> None:
+        frame = np.zeros((40, 200, 3), dtype=np.uint8)
+        processor = PostProcessor(DisplayConfig(width=40, height=40), stabilize_box_pixels=16, rng=random.Random(0))
+
+        processor.process(frame, [detection(0, 0, 40, 40)], source_name="camera:0", should_crop=True, now=0.0)
+        processor.process(frame, [detection(8, 0, 48, 40)], source_name="camera:0", should_crop=True, now=0.1)
+        processor.process(frame, [detection(16, 0, 56, 40)], source_name="camera:0", should_crop=True, now=0.2)
+
+        tracked = processor._tracked_objects[0]  # noqa: SLF001
+        self.assertEqual(tracked.box, Box(16, 0, 56, 40))
+        self.assertEqual(tracked.target_box, Box(16, 0, 56, 40))
 
     def test_keeps_tracking_same_person_before_interval(self) -> None:
         frame = np.zeros((100, 90, 3), dtype=np.uint8)

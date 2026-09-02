@@ -38,6 +38,7 @@ class ConfigTest(unittest.TestCase):
     def test_tracking_defaults_smooth_short_detection_drops(self) -> None:
         self.assertEqual(TrackingConfig().missing_linger_seconds, 0.5)
         self.assertEqual(TrackingConfig().reselect_interval_seconds, 1.0)
+        self.assertEqual(TrackingConfig().stabilize_box_pixels, 16.0)
 
 class CliTest(unittest.TestCase):
     def test_max_fps_flag_sets_camera_mode_strategy(self) -> None:
@@ -70,20 +71,25 @@ class CliTest(unittest.TestCase):
         with patch("sys.stderr", io.StringIO()), self.assertRaises(SystemExit):
             cli._run(["--threshold", "1.1"])
 
-    def test_box_margin_and_no_track_flags_are_passed_to_app(self) -> None:
+    def test_box_margin_stabilization_and_no_track_flags_are_passed_to_app(self) -> None:
         with patch.object(cli, "run_app", return_value=0) as run_app:
             self.assertEqual(
-                cli._run(["--mock", "--headless", "--show-box", "--margin", "10", "--do-not-track"]),
+                cli._run(["--mock", "--headless", "--show-box", "--margin", "10", "--stabilize-box", "8.5", "--do-not-track"]),
                 0,
             )
 
         self.assertTrue(run_app.call_args.kwargs["show_box"])
         self.assertEqual(run_app.call_args.kwargs["margin"], 10)
+        self.assertEqual(run_app.call_args.kwargs["stabilize_box"], 8.5)
         self.assertTrue(run_app.call_args.kwargs["do_not_track"])
 
     def test_margin_must_be_nonnegative(self) -> None:
         with patch("sys.stderr", io.StringIO()), self.assertRaises(SystemExit):
             cli._run(["--margin", "-1"])
+
+    def test_stabilize_box_must_be_nonnegative(self) -> None:
+        with patch("sys.stderr", io.StringIO()), self.assertRaises(SystemExit):
+            cli._run(["--stabilize-box", "-0.1"])
 
     def test_camera_mode_flags_are_mutually_exclusive(self) -> None:
         with patch("sys.stderr", io.StringIO()), self.assertRaises(SystemExit):

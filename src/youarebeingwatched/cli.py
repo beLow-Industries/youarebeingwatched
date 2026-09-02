@@ -31,6 +31,7 @@ def _run(argv: list[str]) -> int:
     parser.add_argument("--threshold", type=_threshold, default=None, help="Detection confidence threshold (default: 0.4).")
     parser.add_argument("--show-box", action="store_true", help="Draw detection boxes and labels.")
     parser.add_argument("--margin", type=_nonnegative_int, default=0, help="Add this many source pixels around each crop.")
+    parser.add_argument("--stabilize-box", type=_nonnegative_float, default=None, help="Only update crop targets when a box edge moves this many source pixels.")
     parser.add_argument("--do-not-track", action="store_true", help="Show the full selected source frame with detection boxes.")
     mode_group = parser.add_mutually_exclusive_group()
     mode_group.add_argument("--max-fps", action="store_true", help="Use the highest-FPS MJPG camera mode above the default minimum FPS.")
@@ -57,6 +58,7 @@ def _run(argv: list[str]) -> int:
         threshold=args.threshold,
         show_box=args.show_box,
         margin=args.margin,
+        stabilize_box=args.stabilize_box,
         do_not_track=args.do_not_track,
     )
 
@@ -66,6 +68,16 @@ def _nonnegative_int(value: str) -> int:
         parsed = int(value)
     except ValueError as exc:
         raise argparse.ArgumentTypeError("must be an integer") from exc
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("must be non-negative")
+    return parsed
+
+
+def _nonnegative_float(value: str) -> float:
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a number") from exc
     if parsed < 0:
         raise argparse.ArgumentTypeError("must be non-negative")
     return parsed
