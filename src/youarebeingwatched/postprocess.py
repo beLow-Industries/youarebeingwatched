@@ -269,16 +269,6 @@ def _paste_crop(
 
     crop = frame[clipped.y1 : clipped.y2, clipped.x1 : clipped.x2]
     crop = item.mask.apply(crop, clipped, frame.shape)
-    if margin > 0 and clipped != expanded:
-        crop = cv2.copyMakeBorder(
-            crop,
-            clipped.y1 - expanded.y1,
-            expanded.y2 - clipped.y2,
-            clipped.x1 - expanded.x1,
-            expanded.x2 - clipped.x2,
-            cv2.BORDER_CONSTANT,
-            value=0,
-        )
     crop_height, crop_width = crop.shape[:2]
     if crop_height <= 0 or crop_width <= 0:
         return None
@@ -301,7 +291,7 @@ def _paste_crop(
     target = _clip_box(item.display_box, frame_width, frame_height)
     if target is None:
         return None
-    crop_box = expanded if margin > 0 else clipped
+    crop_box = clipped
     scale = display_height / (crop_box.y2 - crop_box.y1)
     mapped = Box(
         x1=round(offset_x + (target.x1 - crop_box.x1) * scale),

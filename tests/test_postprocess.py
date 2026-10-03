@@ -58,14 +58,16 @@ class PostProcessorTest(unittest.TestCase):
 
         self.assertEqual(result.detections[0].box, Box(5, 5, 15, 15))
 
-    def test_margin_pads_crop_when_detection_touches_source_edges(self) -> None:
+    def test_margin_clips_to_source_edges_without_padding(self) -> None:
         frame = solid_frame(20, 20, (200, 0, 0))
         processor = PostProcessor(DisplayConfig(width=20, height=20), show_boxes=True, margin=5, rng=random.Random(0))
 
         result = processor.process(frame, [detection(0, 0, 20, 20)], source_name="camera:0", should_crop=True, now=0.0)
 
-        self.assertEqual(result.detections[0].box, Box(3, 3, 17, 17))
-        self.assertTrue(np.all(result.frame[0, 0] == 0))
+        self.assertEqual(result.frame.shape, (20, 20, 3))
+        self.assertEqual(result.detections[0].box, Box(0, 0, 20, 20))
+        self.assertTrue(np.all(result.frame[0, 0] == (200, 0, 0)))
+        self.assertTrue(np.all(result.frame[-1, -1] == (200, 0, 0)))
 
     def test_crops_height_fit_and_centers_with_black_sides(self) -> None:
         frame = solid_frame(100, 80, (10, 20, 30))

@@ -18,6 +18,8 @@ BOX_COLOR = (255, 255, 255)
 LABEL_BACKGROUND = (255, 255, 255)
 LABEL_COLOR = (0, 0, 0)
 TEXT_COLOR = (245, 245, 245)
+LABEL_FONT = cv2.FONT_HERSHEY_PLAIN
+LABEL_THICKNESS = 1
 
 
 class Display:
@@ -38,23 +40,28 @@ class Display:
             cv2.setWindowProperty(config.window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
         logger.info("display ready window={}", config.window_name)
 
-    def show(self, frame: Frame, detections: list[Detection], source_name: str, *, show_source_label: bool = True, show_boxes: bool = False) -> bool:
+    def show(
+        self,
+        frame: Frame,
+        detections: list[Detection],
+        source_name: str,
+        *,
+        show_source_label: bool = True,
+        show_boxes: bool = False,
+        font_size: float = 0.65,
+    ) -> bool:
         started = time.monotonic()
-        rendered = draw_detections(frame, detections) if show_boxes else frame.copy()
+        target_size = self._fullscreen_size if self._fullscreen_size is not None else None
+        rendered = render_frame(
+            frame,
+            detections,
+            source_name,
+            show_source_label=show_source_label,
+            show_boxes=show_boxes,
+            font_size=font_size,
+            target_size=target_size,
+        )
         render_elapsed = time.monotonic() - started
-        if show_source_label:
-            cv2.putText(
-                rendered,
-                source_name,
-                (24, 36),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.8,
-                TEXT_COLOR,
-                2,
-                cv2.LINE_AA,
-            )
-        if self._fullscreen_size is not None:
-            rendered = _cover_frame(rendered, *self._fullscreen_size)
         imshow_started = time.monotonic()
         cv2.imshow(self.config.window_name, rendered)
         imshow_elapsed = time.monotonic() - imshow_started
@@ -80,7 +87,16 @@ class HeadlessDisplay:
     def __init__(self) -> None:
         self._last_printed = 0.0
 
-    def show(self, frame: Frame, detections: list[Detection], source_name: str, *, show_source_label: bool = True, show_boxes: bool = False) -> bool:
+    def show(
+        self,
+        frame: Frame,
+        detections: list[Detection],
+        source_name: str,
+        *,
+        show_source_label: bool = True,
+        show_boxes: bool = False,
+        font_size: float = 0.65,
+    ) -> bool:
         now = time.monotonic()
         if now - self._last_printed >= 1.0:
             height, width = frame.shape[:2]
@@ -92,14 +108,41 @@ class HeadlessDisplay:
         return None
 
 
-def draw_detections(frame: Frame, detections: list[Detection]) -> Frame:
+def render_frame(
+    frame: Frame,
+    detections: list[Detection],
+    source_name: str,
+    *,
+    show_source_label: bool = True,
+    show_boxes: bool = False,
+    font_size: float = 0.65,
+    target_size: tuple[int, int] | None = None,
+) -> Frame:
+    rendered = draw_detections(frame, detections, font_size=font_size) if show_boxes else frame.copy()
+    if show_source_label:
+        cv2.putText(
+            rendered,
+            source_name,
+            (24, 36),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.8,
+            TEXT_COLOR,
+            2,
+            cv2.LINE_AA,
+        )
+    if target_size is not None:
+        rendered = _cover_frame(rendered, *target_size)
+    return rendered
+
+
+def draw_detections(frame: Frame, detections: list[Detection], *, font_size: float = 0.65) -> Frame:
     rendered = frame.copy()
     for detection in detections:
         box = detection.box
         cv2.rectangle(rendered, (box.x1, box.y1), (box.x2, box.y2), BOX_COLOR, 2)
         label = _detection_label(detection)
         text_origin = (box.x1, max(22, box.y1 - 8))
-        (text_width, text_height), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.65, 2)
+        (text_width, text_height), baseline = cv2.getTextSize(label, LABEL_FONT, font_size, LABEL_THICKNESS)
         padding = 3
         label_top = max(0, text_origin[1] - text_height - padding)
         label_bottom = min(rendered.shape[0], text_origin[1] + baseline + padding)
@@ -111,7 +154,7 @@ def draw_detections(frame: Frame, detections: list[Detection]) -> Frame:
             LABEL_BACKGROUND,
             cv2.FILLED,
         )
-        cv2.putText(rendered, label, text_origin, cv2.FONT_HERSHEY_SIMPLEX, 0.65, LABEL_COLOR, 2, cv2.LINE_AA)
+        cv2.putText(rendered, label, text_origin, LABEL_FONT, font_size, LABEL_COLOR, LABEL_THICKNESS, cv2.LINE_AA)
     return rendered
 
 

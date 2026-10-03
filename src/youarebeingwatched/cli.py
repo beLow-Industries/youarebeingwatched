@@ -9,12 +9,15 @@ from loguru import logger
 from .app import run_app
 from .config import AppConfig, with_display_overrides, with_source_overrides
 from .doctor import run_doctor
+from .image import run_image
 
 
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if args and args[0] == "doctor":
         return _doctor(args[1:])
+    if args and args[0] == "image":
+        return _image(args[1:])
     return _run(args)
 
 
@@ -30,6 +33,7 @@ def _run(argv: list[str]) -> int:
     parser.add_argument("--segmentation", action="store_true", help="Use YOLO segmentation masks to black out crop backgrounds.")
     parser.add_argument("--threshold", type=_threshold, default=None, help="Detection confidence threshold (default: 0.4).")
     parser.add_argument("--show-box", action="store_true", help="Draw detection boxes and labels.")
+    parser.add_argument("--font-size", type=_positive_float, default=0.65, help="Detection box label font scale.")
     parser.add_argument("--margin", type=_nonnegative_int, default=0, help="Add this many source pixels around each crop.")
     parser.add_argument("--stabilize-box", type=_nonnegative_float, default=None, help="Only update crop targets when a box edge moves this many source pixels.")
     parser.add_argument("--do-not-track", action="store_true", help="Show the full selected source frame with detection boxes.")
@@ -57,6 +61,7 @@ def _run(argv: list[str]) -> int:
         segmentation=args.segmentation,
         threshold=args.threshold,
         show_box=args.show_box,
+        font_size=args.font_size,
         margin=args.margin,
         stabilize_box=args.stabilize_box,
         do_not_track=args.do_not_track,
@@ -83,6 +88,13 @@ def _nonnegative_float(value: str) -> float:
     return parsed
 
 
+def _positive_float(value: str) -> float:
+    parsed = _nonnegative_float(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be positive")
+    return parsed
+
+
 def _threshold(value: str) -> float:
     try:
         parsed = float(value)
@@ -100,6 +112,30 @@ def _doctor(argv: list[str]) -> int:
     args = parser.parse_args(argv)
     _configure_logging(args.log_level)
     return run_doctor(args.scan_max)
+
+
+def _image(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="ybwatch image")
+    parser.add_argument("--source", required=True, help="JPG or PNG image path.")
+    parser.add_argument("--segmentation", action="store_true", help="Use YOLO segmentation masks to black out crop backgrounds.")
+    parser.add_argument("--threshold", type=_threshold, default=None, help="Detection confidence threshold (default: 0.4).")
+    parser.add_argument("--show-box", action="store_true", help="Draw detection boxes and labels.")
+    parser.add_argument("--font-size", type=_positive_float, default=0.65, help="Detection box label font scale.")
+    parser.add_argument("--margin", type=_nonnegative_int, default=0, help="Add source pixels around each crop.")
+    parser.add_argument("--do-not-track", action="store_true", help="Save the full source image with detection boxes.")
+    parser.add_argument("--log-level", default=os.environ.get("YBWATCH_LOG_LEVEL", "INFO"))
+    args = parser.parse_args(argv)
+    _configure_logging(args.log_level)
+    return run_image(
+        AppConfig(),
+        source=args.source,
+        segmentation=args.segmentation,
+        threshold=args.threshold,
+        show_box=args.show_box,
+        font_size=args.font_size,
+        margin=args.margin,
+        do_not_track=args.do_not_track,
+    )
 
 
 def _configure_logging(level: str) -> None:

@@ -71,6 +71,16 @@ class CliTest(unittest.TestCase):
         with patch("sys.stderr", io.StringIO()), self.assertRaises(SystemExit):
             cli._run(["--threshold", "1.1"])
 
+    def test_font_size_flag_is_passed_to_app(self) -> None:
+        with patch.object(cli, "run_app", return_value=0) as run_app:
+            self.assertEqual(cli._run(["--mock", "--headless", "--font-size", "1.2"]), 0)
+
+        self.assertEqual(run_app.call_args.kwargs["font_size"], 1.2)
+
+    def test_font_size_must_be_positive(self) -> None:
+        with patch("sys.stderr", io.StringIO()), self.assertRaises(SystemExit):
+            cli._run(["--font-size", "0"])
+
     def test_box_margin_stabilization_and_no_track_flags_are_passed_to_app(self) -> None:
         with patch.object(cli, "run_app", return_value=0) as run_app:
             self.assertEqual(
@@ -100,6 +110,42 @@ class CliTest(unittest.TestCase):
             self.assertEqual(cli.main(["doctor"]), 0)
 
         run_doctor.assert_called_once_with(10)
+
+    def test_image_command_dispatches_to_image_runner(self) -> None:
+        with patch.object(cli, "run_image", return_value=0) as run_image:
+            self.assertEqual(cli.main(["image", "--source", "photo.jpg"]), 0)
+
+        run_image.assert_called_once()
+        self.assertEqual(run_image.call_args.kwargs["source"], "photo.jpg")
+
+    def test_image_command_passes_supported_flags(self) -> None:
+        with patch.object(cli, "run_image", return_value=0) as run_image:
+            self.assertEqual(
+                cli.main(
+                    [
+                        "image",
+                        "--source",
+                        "photo.png",
+                        "--segmentation",
+                        "--threshold",
+                        "0.65",
+                        "--show-box",
+                        "--font-size",
+                        "1.2",
+                        "--margin",
+                        "10",
+                        "--do-not-track",
+                    ]
+                ),
+                0,
+            )
+
+        self.assertTrue(run_image.call_args.kwargs["segmentation"])
+        self.assertEqual(run_image.call_args.kwargs["threshold"], 0.65)
+        self.assertTrue(run_image.call_args.kwargs["show_box"])
+        self.assertEqual(run_image.call_args.kwargs["font_size"], 1.2)
+        self.assertEqual(run_image.call_args.kwargs["margin"], 10)
+        self.assertTrue(run_image.call_args.kwargs["do_not_track"])
 
 
 class V4l2SelectionTest(unittest.TestCase):

@@ -26,6 +26,7 @@ Behavioral options:
 | `--do-not-track` | Show the full selected source frame with detection boxes instead of cropping to subjects. |
 | `--segmentation` | Use YOLO segmentation masks to black out crop backgrounds. |
 | `--show-box` | Draw detection boxes and labels. Labels use `human`/`doggo` and confidence percentages. |
+| `--font-size SCALE` | Set detection label font scale (default: `0.65`). |
 | `--margin PIXELS` | Add source pixels around each subject crop. |
 | `--stabilize-box PIXELS` | Hold crop targets until a box edge moves this many source pixels (default: `16`). |
 | `--threshold VALUE` | Set the detection confidence threshold from `0` to `1` (default: `0.4`). |
@@ -52,10 +53,17 @@ uv run ybwatch --do-not-track --show-box
 uv run ybwatch --margin 40 --source 0
 uv run ybwatch --max-fps
 uv run ybwatch --max-resolution
+uv run ybwatch image --source photo.jpg
 ```
 
 Info logging is enabled by default. Use `--log-level DEBUG` or `YBWATCH_LOG_LEVEL=DEBUG` for per-frame detail.
 Press `q` in the OpenCV window to exit. Display output is fullscreen by default; use `--windowed` to force a window.
+
+Process one JPG or PNG still image and save a 1920x1080 result as the first available `out-N.jpg`:
+
+```bash
+uv run ybwatch image --source photo.jpg --margin 40
+```
 
 Inspect camera availability:
 

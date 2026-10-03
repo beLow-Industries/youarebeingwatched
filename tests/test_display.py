@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
-from youarebeingwatched.display import _cover_frame, _detection_label, _should_continue, draw_detections
+from youarebeingwatched.display import LABEL_FONT, LABEL_THICKNESS, _cover_frame, _detection_label, _should_continue, draw_detections
 from youarebeingwatched.types import Box, Detection
 
 
@@ -48,7 +49,17 @@ class DisplayCompositingTest(unittest.TestCase):
         rendered = draw_detections(frame, [Detection("person", 0.9, Box(10, 30, 40, 50))])
 
         self.assertTrue(np.any(np.all(rendered[:30, 10:100] == (255, 255, 255), axis=2)))
-        self.assertTrue(np.any(np.all(rendered[10:30, 10:80] == (0, 0, 0), axis=2)))
+        self.assertTrue(np.any(np.mean(rendered[:30, 10:100], axis=2) < 80))
+
+    def test_detection_label_uses_requested_font_style(self) -> None:
+        frame = np.zeros((60, 120, 3), dtype=np.uint8)
+
+        with patch("youarebeingwatched.display.cv2.putText") as put_text:
+            draw_detections(frame, [Detection("person", 0.9, Box(10, 30, 40, 50))], font_size=1.2)
+
+        self.assertEqual(put_text.call_args.args[3], LABEL_FONT)
+        self.assertEqual(put_text.call_args.args[4], 1.2)
+        self.assertEqual(put_text.call_args.args[6], LABEL_THICKNESS)
 
 
 if __name__ == "__main__":

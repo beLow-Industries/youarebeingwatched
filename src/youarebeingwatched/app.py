@@ -22,18 +22,20 @@ def run_app(
     segmentation: bool = False,
     threshold: float | None = None,
     show_box: bool = False,
+    font_size: float = 0.65,
     margin: int = 0,
     stabilize_box: float | None = None,
     do_not_track: bool = False,
 ) -> int:
     logger.info(
-        "app start mock={} headless={} max_frames={} segmentation={} threshold={} show_box={} margin={} stabilize_box={} do_not_track={} selection_interval={} max_fps={}",
+        "app start mock={} headless={} max_frames={} segmentation={} threshold={} show_box={} font_size={} margin={} stabilize_box={} do_not_track={} selection_interval={} max_fps={}",
         mock,
         headless,
         max_frames,
         segmentation,
         threshold if threshold is not None else config.model.confidence,
         show_box,
+        font_size,
         margin,
         stabilize_box if stabilize_box is not None else config.tracking.stabilize_box_pixels,
         do_not_track,
@@ -144,6 +146,7 @@ def run_app(
                 source_name,
                 show_source_label=result.show_source_label,
                 show_boxes=effective_show_box,
+                font_size=font_size,
             ):
                 logger.info("display requested shutdown")
                 return 0
