@@ -27,6 +27,7 @@ def _run(argv: list[str]) -> int:
     parser.add_argument("--mock", action="store_true", help="Use a generated mock source and synthetic detections.")
     parser.add_argument("--fullscreen", action="store_true", default=None, help="Force fullscreen output.")
     parser.add_argument("--windowed", action="store_false", dest="fullscreen", help="Force windowed output.")
+    parser.add_argument("--output-res", type=_resolution, metavar="WIDTHxHEIGHT", help="Force output resolution instead of detecting the display size.")
     parser.add_argument("--headless", action="store_true", help="Run the processing loop without opening a window.")
     parser.add_argument("--max-frames", type=int, help="Exit after showing this many frames.")
     parser.add_argument("--scan-max", type=int, help="When auto-discovering cameras, scan indices 0 through N-1.")
@@ -52,6 +53,7 @@ def _run(argv: list[str]) -> int:
         fullscreen=args.fullscreen,
         scan_max=args.scan_max,
         source_mode_strategy=source_mode_strategy,
+        output_res=args.output_res,
     )
     return run_app(
         config,
@@ -66,6 +68,16 @@ def _run(argv: list[str]) -> int:
         stabilize_box=args.stabilize_box,
         do_not_track=args.do_not_track,
     )
+
+
+def _resolution(value: str) -> tuple[int, int]:
+    try:
+        width, height = map(int, value.split("x"))
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be WIDTHxHEIGHT, e.g. 1920x1080") from exc
+    if width <= 0 or height <= 0:
+        raise argparse.ArgumentTypeError("width and height must be positive")
+    return width, height
 
 
 def _nonnegative_int(value: str) -> int:

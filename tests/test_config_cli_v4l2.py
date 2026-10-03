@@ -41,6 +41,21 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(TrackingConfig().stabilize_box_pixels, 16.0)
 
 class CliTest(unittest.TestCase):
+    def test_output_resolution_overrides_display_dimensions(self) -> None:
+        with patch.object(cli, "run_app", return_value=0) as run_app:
+            self.assertEqual(cli._run(["--output-res", "1920x1080"]), 0)
+
+        display = run_app.call_args.args[0].display
+        self.assertEqual((display.width, display.height), (1920, 1080))
+        self.assertEqual(display.output_res, (1920, 1080))
+        self.assertTrue(display.fullscreen)
+
+    def test_output_resolution_rejects_malformed_or_nonpositive_dimensions(self) -> None:
+        for value in ("1920", "1920x1080x720", "abcx1080", "0x1080", "1920x-1"):
+            with self.subTest(value=value), patch("sys.stderr", io.StringIO()), self.assertRaises(SystemExit) as error:
+                cli._run(["--output-res", value])
+            self.assertEqual(error.exception.code, 2)
+
     def test_max_fps_flag_sets_camera_mode_strategy(self) -> None:
         with patch.object(cli, "run_app", return_value=0) as run_app:
             self.assertEqual(cli._run(["--mock", "--headless", "--max-fps"]), 0)

@@ -31,6 +31,7 @@ Behavioral options:
 | `--stabilize-box PIXELS` | Hold crop targets until a box edge moves this many source pixels (default: `16`). |
 | `--threshold VALUE` | Set the detection confidence threshold from `0` to `1` (default: `0.4`). |
 | `--fullscreen` / `--windowed` | Force fullscreen or windowed output. Fullscreen output fills the detected display size. |
+| `--output-res WIDTHxHEIGHT` | Force the output rendering and initial window size, bypassing display-size detection (e.g. `1920x1080`). |
 | `--headless` | Run without opening an OpenCV window; useful for smoke checks. |
 
 Capture and runtime options:
@@ -53,6 +54,7 @@ uv run ybwatch --do-not-track --show-box
 uv run ybwatch --margin 40 --source 0
 uv run ybwatch --max-fps
 uv run ybwatch --max-resolution
+uv run ybwatch --output-res 1920x1080
 uv run ybwatch image --source photo.jpg
 ```
 

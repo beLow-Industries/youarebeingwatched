@@ -34,6 +34,7 @@ class DisplayConfig:
     max_fps: float = 30.0
     width: int = 1280
     height: int = 720
+    output_res: tuple[int, int] | None = None
 
 
 @dataclass(frozen=True)
@@ -70,12 +71,16 @@ def with_display_overrides(
     fullscreen: bool | None,
     scan_max: int | None,
     source_mode_strategy: CameraModeStrategy | None = None,
+    output_res: tuple[int, int] | None = None,
 ) -> AppConfig:
     display = config.display
     sources = config.sources
 
     if fullscreen is not None:
         display = replace(display, fullscreen=fullscreen)
+
+    if output_res is not None:
+        display = replace(display, width=output_res[0], height=output_res[1], output_res=output_res)
 
     if scan_max is not None:
         sources = replace(sources, scan_indices=tuple(range(max(0, scan_max))))

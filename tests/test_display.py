@@ -5,7 +5,8 @@ from unittest.mock import patch
 
 import numpy as np
 
-from youarebeingwatched.display import LABEL_FONT, LABEL_THICKNESS, _cover_frame, _detection_label, _should_continue, draw_detections
+from youarebeingwatched.config import DisplayConfig
+from youarebeingwatched.display import Display, LABEL_FONT, LABEL_THICKNESS, _cover_frame, _detection_label, _should_continue, draw_detections
 from youarebeingwatched.types import Box, Detection
 
 
@@ -23,6 +24,23 @@ class DisplayKeyboardTest(unittest.TestCase):
 
 
 class DisplayCompositingTest(unittest.TestCase):
+    def test_output_resolution_bypasses_screen_detection_and_sizes_rendered_frames(self) -> None:
+        for fullscreen in (True, False):
+            with self.subTest(fullscreen=fullscreen), \
+                patch("youarebeingwatched.display._assert_x_display_available"), \
+                patch("youarebeingwatched.display._screen_size", return_value=(3840, 1080)) as screen_size, \
+                patch("youarebeingwatched.display.cv2.namedWindow"), \
+                patch("youarebeingwatched.display.cv2.resizeWindow") as resize_window, \
+                patch("youarebeingwatched.display.cv2.setWindowProperty"), \
+                patch("youarebeingwatched.display.cv2.imshow") as imshow, \
+                patch("youarebeingwatched.display.cv2.waitKey", return_value=-1):
+                display = Display(DisplayConfig(fullscreen=fullscreen, width=1920, height=1080, output_res=(1920, 1080)))
+                display.show(np.zeros((480, 640, 3), dtype=np.uint8), [], "test")
+
+                screen_size.assert_not_called()
+                resize_window.assert_called_once_with(display.config.window_name, 1920, 1080)
+                self.assertEqual(imshow.call_args.args[1].shape, (1080, 1920, 3))
+
     def test_cover_frame_matches_target_without_borders(self) -> None:
         frame = np.zeros((900, 1600, 3), dtype=np.uint8)
         rendered = _cover_frame(frame, 1920, 1200)

@@ -33,7 +33,7 @@ class Display:
             config.height,
         )
         _assert_x_display_available()
-        self._fullscreen_size = _screen_size() if config.fullscreen else None
+        self._target_size = config.output_res or (_screen_size() if config.fullscreen else None)
         cv2.namedWindow(config.window_name, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(config.window_name, config.width, config.height)
         if config.fullscreen:
@@ -51,7 +51,6 @@ class Display:
         font_size: float = 0.65,
     ) -> bool:
         started = time.monotonic()
-        target_size = self._fullscreen_size if self._fullscreen_size is not None else None
         rendered = render_frame(
             frame,
             detections,
@@ -59,7 +58,7 @@ class Display:
             show_source_label=show_source_label,
             show_boxes=show_boxes,
             font_size=font_size,
-            target_size=target_size,
+            target_size=self._target_size,
         )
         render_elapsed = time.monotonic() - started
         imshow_started = time.monotonic()
